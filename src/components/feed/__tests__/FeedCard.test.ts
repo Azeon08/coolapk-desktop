@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getFeedChangeHistory: vi.fn(),
   getHotReplies: vi.fn(),
   getFeedReplies: vi.fn(),
+  getReplyDetail: vi.fn(),
   openUrl: vi.fn(),
   routerPush: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock('../../../api/coolapk', () => ({
     getFeedChangeHistory: mocks.getFeedChangeHistory,
     getHotReplies: mocks.getHotReplies,
     getFeedReplies: mocks.getFeedReplies,
+    getReplyDetail: mocks.getReplyDetail,
     openUrl: mocks.openUrl,
   },
 }));
@@ -1083,6 +1085,38 @@ describe('桌面端点击动态的行为', () => {
     await wrapper.findComponent({ name: 'FeedActionBar' }).vm.$emit('open-comment');
     await flushPromises();
     expect(mocks.routerPush).toHaveBeenCalledWith({ path: '/feed/42', query: { scrollTo: 'comments' } });
+    wrapper.unmount();
+  });
+
+  it.each(['body', 'comment'])('我的回复点击 %s 使用所属动态 ID 并定位评论', async entry => {
+    const wrapper = await mountCard(false);
+    await wrapper.setProps({ replyMode: true, feed: { id: '222', feedId: '333', message: '我的回复', username: '作者' } as any });
+    if (entry === 'body') await wrapper.get('article').trigger('click');
+    else wrapper.findComponent({ name: 'FeedActionBar' }).vm.$emit('open-comment');
+    await flushPromises();
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: '/feed/333', query: { replyId: '222' } });
+    expect(mocks.getReplyDetail).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('我的回复缺少所属动态时读取评论详情，不把回复 ID 当成动态 ID', async () => {
+    mocks.getReplyDetail.mockResolvedValue({ data: { id: '222', fid: '333', rid: '111', rrid: '111' } });
+    const wrapper = await mountCard(true);
+    await wrapper.setProps({ replyMode: true, feed: { id: '222', message: '我的回复' } as any });
+    await wrapper.get('article').trigger('click');
+    await flushPromises();
+    expect(mocks.getReplyDetail).toHaveBeenCalledWith('222');
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: '/feed/333', query: { replyId: '222' } });
+    wrapper.unmount();
+  });
+
+  it('评论详情没有所属动态时不跳到错误帖子', async () => {
+    mocks.getReplyDetail.mockResolvedValue({ data: { id: '222' } });
+    const wrapper = await mountCard(true);
+    await wrapper.setProps({ replyMode: true, feed: { id: '222', message: '我的回复' } as any });
+    await wrapper.get('article').trigger('click');
+    await flushPromises();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

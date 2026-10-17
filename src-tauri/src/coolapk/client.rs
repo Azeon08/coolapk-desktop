@@ -4538,6 +4538,10 @@ impl CoolapkClient {
                 &[("id", reply_id.to_string())],
             )
             .await?;
+        Self::normalize_reply_detail(&raw)
+    }
+
+    fn normalize_reply_detail(raw: &Value) -> Result<Value, String> {
         let obj = raw
             .get("data")
             .and_then(Value::as_object)
@@ -4563,9 +4567,9 @@ impl CoolapkClient {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or(&ua_device_rom);
 
-        Ok(json!({
-            "code": 200,
-            "data": {
+        // 保留 fid、rid/rrid、作者和原动态等关联字段；前端还需要用它们导航和定位。
+        let mut detail = obj.clone();
+        let normalized = json!({
                 "id": obj.get("id").map(value_to_string).unwrap_or_default(),
                 // 评论列表可能截断正文并附加“查看更多”，详情中的 message 用于原位展开。
                 "message": obj.get("message").cloned().unwrap_or(Value::Null),
@@ -4580,8 +4584,11 @@ impl CoolapkClient {
                 "dateline": obj.get("dateline").cloned().unwrap_or(json!(0)),
                 "isFeedAuthor": obj.get("isFeedAuthor").cloned().unwrap_or(json!(0)),
                 "ipLocation": obj.get("ipLocation").and_then(Value::as_str).or_else(|| obj.get("ip_location").and_then(Value::as_str)).unwrap_or("")
-            }
-        }))
+        });
+        if let Some(fields) = normalized.as_object() {
+            detail.extend(fields.clone());
+        }
+        Ok(json!({ "code": 200, "data": detail }))
     }
 
     pub async fn get_hot_replies(&self, feed_id: &str, page: u32) -> Result<Value, String> {

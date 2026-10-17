@@ -1,5 +1,5 @@
 <template>
-  <FeedCard v-if="isFeedEntity" :feed="entity" @deleted="(id) => emit('deleted', id)" />
+  <FeedCard v-if="isFeedEntity" :feed="entity" :reply-mode="tab === 'reply' || /reply|comment/.test(type)" @deleted="(id) => emit('deleted', id)" />
   <RatingCard v-else-if="isRatingEntity" :feed="entity" />
   <article v-else class="user-entity-card" :class="`entity-${variant}`" @click="openEntity">
     <template v-if="variant === 'collection'">

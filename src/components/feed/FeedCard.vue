@@ -345,6 +345,7 @@ import { feedPageVisibleKey, feedPageRenderKey } from '../../utils/feedPageVisib
 import { useRouter } from 'vue-router';
 import type { FeedItem } from '../../types/feed';
 import { navigateBack } from '../../utils/navigation';
+import { getNotificationFeedId, getNotificationReplyId } from '../../utils/notificationNavigation';
 import { useOfficialMobileFeedDetail, useMobileLayout } from '../../composables/useOfficialMobileFeedDetail';
 import { openDesktopFeedCommentsKey } from '../../utils/desktopFeedComments';
 import OfficialFeedProductCard from './OfficialFeedProductCard.vue';
@@ -443,6 +444,8 @@ const props = defineProps<{
   externalInteractionLists?: boolean;
   questionMode?: boolean;
   answerMode?: boolean;
+  /** 我的回复等列表中的记录 ID 属于评论，点击时需先定位所属动态。 */
+  replyMode?: boolean;
 }>();
 
 const authorFollowing = ref(Number((props.feed.userAction as any)?.followAuthor) === 1);
@@ -464,6 +467,25 @@ function navigateToOfficialDetail(scrollTo: 'top' | 'comments') {
   void router.push({ path: `/feed/${props.feed.id}`, query: { scrollTo } });
 }
 function openOfficialDetail() { navigateToOfficialDetail('top'); }
+let openingReplyDetail = false;
+async function openReplyDetail() {
+  if (openingReplyDetail) return;
+  openingReplyDetail = true;
+  try {
+    const reply = { ...props.feed, entityType: 'reply' };
+    const replyId = getNotificationReplyId(reply);
+    if (!replyId) throw new Error('缺少评论标识，无法打开这条回复');
+    let feedId = getNotificationFeedId(reply);
+    if (!feedId) {
+      const response = await CoolapkTauriAPI.getReplyDetail(replyId);
+      feedId = getNotificationFeedId(response?.data);
+    }
+    if (!feedId) throw new Error('无法获取这条回复所属的动态，请稍后重试');
+    await router.push({ path: `/feed/${feedId}`, query: { replyId } });
+  } catch (error) {
+    showToast(getErrorMessage(error, '打开回复失败，请稍后重试'), 'error');
+  } finally { openingReplyDetail = false; }
+}
 async function scrollToMobileComments() { void openComments(); await nextTick(); cardRef.value?.querySelector('.comment-toolbar')?.scrollIntoView({ block: 'start', behavior: settingsStore.settings.reduceMotion ? 'auto' : 'smooth' }); }
 async function writeMobileComment() { if (!authStore.isLoggedIn) { authStore.openLoginModal(); return; } void openComments(); await nextTick(); commentSectionRef.value?.openComposer(); }
 const isAnswerCard = computed(() => Boolean(props.answerMode) || isAnswerSearchEntity(props.feed as any));
@@ -1373,6 +1395,7 @@ function keepCollapsedCardVisible(card: HTMLElement, scrollContainer: HTMLElemen
 }
 
 async function toggleComments() {
+  if (props.replyMode && !props.detailMode) { await openReplyDetail(); return; }
   if (!props.detailMode && opensDetailOnClick.value && !isQuestionCard.value && !isAnswerCard.value) { navigateToOfficialDetail('comments'); return; }
   if (props.disableInlineComments) {
     emit('open-comment', props.feed);
@@ -1514,6 +1537,8 @@ function handleCardClick(e: MouseEvent) {
   if (target.closest('a') || target.closest('button') || target.closest('.grid-item') || target.closest('.feed-video-card') || target.closest('.inline-comment-wrapper')) {
     return;
   }
+
+  if (props.replyMode) { void openReplyDetail(); return; }
 
   if (openQuestionDetail()) return;
   if (openAnswerDetail()) return;

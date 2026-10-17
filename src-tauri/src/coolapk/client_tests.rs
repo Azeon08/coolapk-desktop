@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn reply_detail_normalization_preserves_navigation_and_reply_context() {
+    let raw = json!({ "data": {
+        "id": 222, "fid": "333", "rid": "111", "rrid": "111",
+        "uid": "456", "username": "回复者", "message": "完整回复",
+        "userInfo": { "uid": "456", "level": 4 },
+        "feed": { "id": "333", "entityType": "feed" },
+        "device_title": "测试机型"
+    }});
+    let result = CoolapkClient::normalize_reply_detail(&raw).unwrap();
+    let detail = &result["data"];
+    assert_eq!(detail["id"], "222");
+    for key in ["fid", "rid", "rrid", "uid", "username", "userInfo", "feed"] {
+        assert_eq!(detail[key], raw["data"][key], "关联字段 {key} 不应被丢弃");
+    }
+    assert_eq!(detail["message"], "完整回复");
+    assert_eq!(detail["deviceTitle"], "测试机型");
+    assert_eq!(detail["userLevel"], "4");
+}
+
+#[test]
+fn reply_detail_normalization_rejects_missing_reply_data() {
+    assert!(CoolapkClient::normalize_reply_detail(&json!({ "data": null })).is_err());
+}
+
+#[test]
 fn generated_duid_is_guest_default_and_account_explicit_only() {
     let client = CoolapkClient::new();
     client.update_device_profile(DeviceProfile { device_id: Some("DUmanual123456".into()), ..Default::default() });

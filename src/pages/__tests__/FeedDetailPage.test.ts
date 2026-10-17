@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { defineComponent, inject, ref } from 'vue';
 import { mobileDetailActionsHiddenKey } from '../../composables/useMobileReadingNavigation';
+import { routeNavigationIsHistory } from '../../utils/routeScroll';
 
 const mocks = vi.hoisted(() => ({ detail: vi.fn(), context: vi.fn(), save: vi.fn(), back: vi.fn(), replace: vi.fn(), query: { replyId: '123' } as Record<string, string>, history: { back: '/' as string | null }, mobile: { value: true } as { value: boolean } }));
 vi.mock('../../api/coolapk', () => ({ CoolapkTauriAPI: { getFeedDetail: mocks.detail } }));
@@ -45,6 +46,7 @@ describe('官方详情评论加载', () => {
     } finally { wrapper.unmount(); }
   });
   beforeEach(() => {
+    routeNavigationIsHistory.value = false;
     mocks.query = { replyId: '123' };
     mocks.mobile.value = true;
     useSettingsStore().settings.desktopCommentsOnRight = false;
@@ -68,7 +70,7 @@ describe('官方详情评论加载', () => {
       expect((wrapper.element as HTMLElement).scrollTop).toBe(350);
     } finally { wrapper.unmount(); rect.mockRestore(); }
   });
-  it.each(['top', 'comments'])('重新激活缓存详情仍按 %s 入口定位', async scrollTo => {
+  it.each(['top', 'comments'])('从主页后退保留阅读位置，再次主动打开才按 %s 入口定位', async scrollTo => {
     mocks.query = { scrollTo };
     mocks.context.mockReturnValue({ id: '42', uid: '1', username: '作者', message: '正文' });
     mocks.detail.mockResolvedValue({ data: { id: '42', uid: '1', username: '作者', message: '正文' } });
@@ -86,10 +88,17 @@ describe('官方详情评论加载', () => {
       page.scrollTop = 350;
       visible.value = false;
       await flushPromises();
+      routeNavigationIsHistory.value = true;
+      visible.value = true;
+      await flushPromises();
+      expect(page.scrollTop).toBe(350);
+      visible.value = false;
+      await flushPromises();
+      routeNavigationIsHistory.value = false;
       visible.value = true;
       await flushPromises();
       expect(page.scrollTop).toBe(scrollTo === 'top' ? 0 : 600);
-    } finally { wrapper.unmount(); rect.mockRestore(); }
+    } finally { wrapper.unmount(); rect.mockRestore(); routeNavigationIsHistory.value = false; }
   });
   it('加载中和失败时仍可返回，直接打开时退回首页', async () => {
     let fail!: (error: Error) => void;

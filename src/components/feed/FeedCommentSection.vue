@@ -69,7 +69,7 @@
         contenteditable="true"
         role="textbox"
         tabindex="0"
-        :data-placeholder="replyTargetUser ? `回复 @${replyTargetUser}...` : '撰写你的精彩评论... (支持直接粘贴截图)'"
+        :data-placeholder="replyTargetUser ? '撰写回复...' : '撰写你的精彩评论... (支持直接粘贴截图)'"
         @input="handleEditorInput"
         @paste="handlePaste"
         @keydown="handleKeydown"
@@ -220,7 +220,7 @@
             :plugin-url="getCommentPluginUrl(c)"
             :size="32"
             alt="头像"
-            @click="setReplyTarget(c.username || c.userInfo?.username, c.id)"
+            @click.stop="openCommentUser(c)"
           />
         </UserHoverCard>
 
@@ -237,7 +237,7 @@
             >
               <span
                 class="comment-username"
-                @click="setReplyTarget(c.username || c.userInfo?.username, c.id)"
+                @click.stop="openCommentUser(c)"
               >
                 {{ c.username || c.userInfo?.username || '酷友' }}
               </span>
@@ -353,6 +353,7 @@
                   :plugin-url="getCommentPluginUrl(sub)"
                   :size="28"
                   alt="头像"
+                  @click.stop="openCommentUser(sub)"
                 />
               </UserHoverCard>
               <div class="sub-reply-main">
@@ -365,7 +366,7 @@
                     :level="getCommentUserLevel(sub)"
                     :verify-title="getCommentVerifyTitle(sub)"
                   >
-                    <span class="sub-user">{{ sub.username || sub.fromUserName || '酷友' }}</span>
+                    <span class="sub-user" @click.stop="openCommentUser(sub)">{{ sub.username || sub.fromUserName || '酷友' }}</span>
                   </UserHoverCard>
                   <span v-if="isAuthor(sub)" class="badge-author sub-badge">楼主</span>
                   <span v-if="getCommentUserLevel(sub)" class="level-tag">LV{{ getCommentUserLevel(sub) }}</span>
@@ -521,9 +522,12 @@
 <script setup lang="ts">
 import { createEditorTextNodes } from "../../utils/editorTextNodes";
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
+import { normalizeUserUid } from '../../utils/userRoute';
 import { useDeviceModelNames } from '../../utils/deviceModelNames';
 
 const displayDeviceName = useDeviceModelNames();
+const router = useRouter();
 import { usePlatformShortcuts } from '../../utils/shortcuts';
 import { useShortcutHints } from '../../composables/useShortcutHints';
 import AppAvatar from '../common/AppAvatar.vue';
@@ -1639,6 +1643,11 @@ function handleCommentMoreClick(e: MouseEvent, comment: any): boolean {
     showToast('加载完整评论失败，请稍后重试', 'error');
   });
   return true;
+}
+
+function openCommentUser(comment: any) {
+  const uid = normalizeUserUid(comment.uid || comment.fromUid || comment.userId || comment.userInfo?.uid);
+  if (uid) void router.push(`/user/${encodeURIComponent(uid)}`);
 }
 
 function handleSubReplyClick(e: MouseEvent, sub: any, floor: any) {

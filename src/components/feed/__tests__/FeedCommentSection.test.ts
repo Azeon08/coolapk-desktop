@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   replyFeed: vi.fn(),
   uploadImage: vi.fn(),
   logDiagnostic: vi.fn(),
+  routerPush: vi.fn(),
+}));
+vi.mock('vue-router', async original => ({
+  ...await original<typeof import('vue-router')>(),
+  useRouter: () => ({ push: mocks.routerPush }),
 }));
 vi.mock('../../../utils/diagnosticLogger', async (original) => ({
   ...await original<typeof import('../../../utils/diagnosticLogger')>(),
@@ -34,6 +39,25 @@ vi.mock('../../../api/coolapk', () => ({
 import FeedCommentSection from '../FeedCommentSection.vue';
 
 describe('评论完整信息展示', () => {
+  it.each(['.comment-avatar', '.comment-username', '.sub-reply-avatar', '.sub-user'])('点击 %s 进入用户主页，不打开回复输入框', async selector => {
+    const wrapper = mountSection({ uid: '123', replyRows: [{ id: 'sub-1', fromUid: '456', fromUserName: '楼中楼用户', message: '楼中楼正文' }] });
+    try {
+      await wrapper.get(selector).trigger('click');
+      expect(mocks.routerPush).toHaveBeenCalledWith(selector.startsWith('.sub-') ? '/user/456' : '/user/123');
+      expect(wrapper.find('.comment-reply-target-bar').exists()).toBe(false);
+      expect(document.body.querySelector('.desktop-reply-composer')).toBeNull();
+    } finally { wrapper.unmount(); }
+  });
+
+  it('没有用户标识时点击昵称不误触回复', async () => {
+    const wrapper = mountSection({ uid: undefined, userId: undefined, userInfo: undefined });
+    try {
+      await wrapper.get('.comment-username').trigger('click');
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+      expect(wrapper.find('.comment-reply-target-bar').exists()).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
   it('目标同时出现在楼中楼和完整楼层时只保留小框，并定位到楼中楼', async () => {
     const target = { id: '222', feedId: '333', rid: '0', rrid: '0', message: '目标回复', username: '回复者' };
     mocks.getReplyDetail.mockResolvedValue({ data: target });

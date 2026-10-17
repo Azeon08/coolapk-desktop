@@ -57,6 +57,7 @@ import { useSettingsStore } from '../stores/settings';
 import { provideDetailImageScope } from '../composables/useNoImageMode';
 import { mobileDetailActionsHiddenKey, useMobileReadingNavigation } from '../composables/useMobileReadingNavigation';
 import { feedPageVisibleKey } from '../utils/feedPageVisibility';
+import { routeNavigationIsHistory } from '../utils/routeScroll';
 
 defineOptions({ name: 'FeedDetailPage' });
 const detailImagesEnabled = provideDetailImageScope();
@@ -154,9 +155,9 @@ const entryPosition = computed(() => {
 
 async function applyEntryPosition() {
   const position = entryPosition.value;
-  if (!position || entryPositionApplied || !detailActive.value || !feedDetail.value) return;
+  if (routeNavigationIsHistory.value || !position || entryPositionApplied || !detailActive.value || !feedDetail.value) return;
   await nextTick();
-  if (position !== entryPosition.value || !detailActive.value || entryPositionApplied) return;
+  if (routeNavigationIsHistory.value || position !== entryPosition.value || !detailActive.value || entryPositionApplied) return;
   const page = detailShellRef.value?.parentElement;
   if (!page) return;
   if (position === 'comments') {

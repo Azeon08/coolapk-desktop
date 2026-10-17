@@ -67,7 +67,7 @@ import AboutSettingsPage from '../pages/settings/AboutSettingsPage.vue';
 import StartupSettingsPage from '../pages/settings/StartupSettingsPage.vue';
 import DeviceSettingsPage from '../pages/settings/DeviceSettingsPage.vue';
 import DiagnosticsSettingsPage from '../pages/settings/DiagnosticsSettingsPage.vue';
-import { restoreRouteScrollPosition, saveRouteScrollPosition } from '../utils/routeScroll';
+import { restoreRouteScrollPosition, routeNavigationIsHistory, saveRouteScrollPosition } from '../utils/routeScroll';
 import { logDiagnostic, setDiagnosticPage, summarizeDiagnosticError } from '../utils/diagnosticLogger';
 
 import AuthCallbackView from '../pages/AuthCallbackView.vue';
@@ -173,7 +173,12 @@ export const router = createRouter({
   }
 });
 
+let pendingHistoryNavigation = false;
+router.options.history.listen(() => { pendingHistoryNavigation = true; });
+
 router.beforeEach((_to, from) => {
+  routeNavigationIsHistory.value = pendingHistoryNavigation;
+  pendingHistoryNavigation = false;
   saveRouteScrollPosition(from.fullPath);
 });
 
@@ -188,6 +193,6 @@ router.afterEach((to, from, failure) => {
   setDiagnosticPage(page);
   logDiagnostic('info', 'navigation', 'route_changed', `from=${previousPage} to=${page}`);
   // 卡片正文与回复图标明确指定落点，由详情页在内容挂载后定位，不能再用缓存覆盖。
-  if (to.name === 'FeedDetail' && ['top', 'comments'].includes(String(to.query.scrollTo || ''))) return;
+  if (!routeNavigationIsHistory.value && to.name === 'FeedDetail' && ['top', 'comments'].includes(String(to.query.scrollTo || ''))) return;
   void restoreRouteScrollPosition(to.fullPath);
 });

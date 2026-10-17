@@ -1,4 +1,7 @@
-import { nextTick } from 'vue';
+import { nextTick, ref } from 'vue';
+
+/** 浏览器/原生返回和前进应恢复阅读位置，不重放卡片入口的定位。 */
+export const routeNavigationIsHistory = ref(false);
 
 type ScrollPosition = {
   element: HTMLElement;

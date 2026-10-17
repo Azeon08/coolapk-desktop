@@ -228,6 +228,86 @@ describe('按实际尺寸缩放图片，避免合成图层放大接缝', () => {
   });
 });
 
+describe('仅移动端单击图片退出', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Android');
+    loadResourceMock.mockImplementation(async url => dataOf(url));
+    memoryCacheMock.mockReturnValue(null);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('移动端单击图片退出，并等待双击窗口', async () => {
+    const { wrapper, store } = await mountViewer();
+    const image = wrapper.get('.viewer-img').element;
+    dispatchTouch(image, 'touchstart', [point(100, 100)]);
+    dispatchTouch(image, 'touchend', []);
+    await wrapper.get('.viewer-img').trigger('click');
+    expect(store.activeImageViewer).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(301);
+    expect(store.activeImageViewer).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('桌面端单击图片仍保持查看', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Windows NT 10.0');
+    const { wrapper, store } = await mountViewer();
+    await wrapper.get('.viewer-img').trigger('click');
+    await vi.advanceTimersByTimeAsync(301);
+    expect(store.activeImageViewer).not.toBeNull();
+    wrapper.unmount();
+  });
+
+  it('移动端双击缩放，取消单击退出', async () => {
+    const { wrapper, store, stage } = await mountViewer();
+    dispatchTouch(stage, 'touchstart', [point(100, 100)]);
+    dispatchTouch(stage, 'touchend', []);
+    await vi.advanceTimersByTimeAsync(100);
+    dispatchTouch(stage, 'touchstart', [point(100, 100)]);
+    dispatchTouch(stage, 'touchend', []);
+    await wrapper.get('.viewer-img').trigger('click');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(store.activeImageViewer).not.toBeNull();
+    expect(wrapper.get('.zoom-text').text()).toBe('180%');
+    wrapper.unmount();
+  });
+
+  it('单击后开始滑动取消退出，切图补发点击不会关闭', async () => {
+    const { wrapper, store, stage } = await mountViewer();
+    dispatchTouch(stage, 'touchstart', [point(100, 100)]);
+    dispatchTouch(stage, 'touchend', []);
+    await vi.advanceTimersByTimeAsync(100);
+    await swipe(stage, point(300, 400), point(180, 400));
+    await wrapper.get('.viewer-img').trigger('click');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(store.activeImageViewer).not.toBeNull();
+    expect(counter(wrapper)).toBe('2 / 3');
+    wrapper.unmount();
+  });
+
+  it('捏合和取消触摸不会误关，旧查看器的计时不会关闭新查看器', async () => {
+    const { wrapper, store, stage } = await mountViewer();
+    dispatchTouch(stage, 'touchstart', [point(100, 100), point(200, 100)]);
+    dispatchTouch(stage, 'touchend', []);
+    await wrapper.get('.viewer-img').trigger('click');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(store.activeImageViewer).not.toBeNull();
+    dispatchTouch(stage, 'touchstart', [point(100, 100)]);
+    dispatchTouch(stage, 'touchcancel', []);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(store.activeImageViewer).not.toBeNull();
+    await wrapper.get('.viewer-img').trigger('click');
+    store.openImageViewer(['https://img.example/new.jpg']);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(store.activeImageViewer).not.toBeNull();
+    wrapper.unmount();
+  });
+});
+
 describe('图片查看器触摸手势', () => {
   beforeEach(() => {
     vi.restoreAllMocks();

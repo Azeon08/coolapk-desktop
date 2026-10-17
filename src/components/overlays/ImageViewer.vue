@@ -174,6 +174,7 @@ import { getErrorMessage } from '../../utils/errors';
 import { showToast } from '../../utils/toast';
 import { showLivePhotoCodecPrompt } from '../../utils/livePhotoCodecPrompt';
 import { useAndroidBackButton } from '../../utils/androidBackButton';
+import { isTouchMobilePlatform } from '../../utils/platform';
 import { normalizeFeedImageItems, resolveLivePhotoVideo, type FeedImageItem } from '../../utils/livePhoto';
 import { detectLiveVideoCodec, getLiveVideoCodecSupport, waitForDecodedVideoFrame, logLiveVideoState, type LiveVideoCodec } from '../../utils/liveVideoCodec';
 
@@ -592,6 +593,8 @@ async function toggleLiveSound() {
 }
 
 watch(viewerData, (val) => {
+  clearSingleTapClose();
+  lastTapAt = 0;
   settleTransitionNow();
   if (val) {
     currentIndex.value = Math.min(Math.max(val.currentIndex, 0), Math.max(imageItems.value.length - 1, 0));
@@ -723,6 +726,8 @@ function rotateLeft() {
 }
 
 function close() {
+  clearSingleTapClose();
+  lastTapAt = 0;
   appStore.closeImageViewer();
 }
 
@@ -797,6 +802,7 @@ function restoreSwipeOffsets() {
  * 换图本身仍是同步的，计数与画面同一帧生效。
  */
 function slideTo(direction: 1 | -1, fromOffsetX = 0): boolean {
+  clearSingleTapClose();
   const atEdge = direction === 1
     ? currentIndex.value >= totalCount.value - 1
     : currentIndex.value <= 0;
@@ -853,6 +859,7 @@ function toggleZoom() {
 }
 
 function handleDoubleClick() {
+  clearSingleTapClose();
   // 触摸端已经用 touchend 间隔识别过双击，避免同一次双击被鼠标事件再算一遍。
   if (Date.now() < suppressDoubleClickUntil) return;
   toggleZoom();
@@ -913,15 +920,31 @@ let touchStartY = 0;
 let suppressBackdropTapUntil = 0;
 let suppressDoubleClickUntil = 0;
 let lastTapAt = 0;
+let singleTapCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let pinchActive = false;
 let pinchStartDistance = 0;
 let pinchStartScale = 1;
+
+function clearSingleTapClose() {
+  if (singleTapCloseTimer !== null) clearTimeout(singleTapCloseTimer);
+  singleTapCloseTimer = null;
+}
+
+function scheduleSingleTapClose() {
+  clearSingleTapClose();
+  // 等待双击判定窗口，第二次点按或开始拖动、捏合时取消关闭。
+  singleTapCloseTimer = setTimeout(() => {
+    singleTapCloseTimer = null;
+    close();
+  }, DOUBLE_TAP_MS);
+}
 
 function touchDistance(a: Touch, b: Touch): number {
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 }
 
 function onTouchStart(e: TouchEvent) {
+  clearSingleTapClose();
   // 新手势打断上一段切图过渡，避免两层动画同时跑。
   settleTransitionNow();
   touchMoved = false;
@@ -931,6 +954,7 @@ function onTouchStart(e: TouchEvent) {
 
   // 双指：捏合缩放。整段手势结束后才重新接管，避免缩放中途误切图。
   if (e.touches.length === 2) {
+    lastTapAt = 0;
     touchActive = false;
     pinchActive = true;
     touchDragging.value = true;
@@ -1019,6 +1043,7 @@ function endTouchGesture(commitSwipe: boolean) {
   touchPanMode = false;
 
   if (wasPinching) {
+    if (isTouchMobilePlatform()) suppressBackdropTapUntil = Date.now() + BACKDROP_TAP_GUARD_MS;
     restoreSwipeOffsets();
     return;
   }
@@ -1027,23 +1052,34 @@ function endTouchGesture(commitSwipe: boolean) {
     return;
   }
 
-  // 纯点按：双击缩放，单击交给 click 逻辑处理（点背景关闭）。
+  // 移动端纯点按延后关闭，让双击仍可缩放；桌面保留点击背景关闭。
   // 注意放在平移判断之前：放大状态下单击同样不能移动图片，必须仍然允许双击还原。
   if (!touchMoved) {
     if (panned) isDragging.value = false;
+    if (!commitSwipe && isTouchMobilePlatform()) {
+      lastTapAt = 0;
+      suppressBackdropTapUntil = Date.now() + BACKDROP_TAP_GUARD_MS;
+      restoreSwipeOffsets();
+      return;
+    }
     const now = Date.now();
-    if (now - lastTapAt < DOUBLE_TAP_MS) {
+    if (lastTapAt > 0 && now - lastTapAt < DOUBLE_TAP_MS) {
       lastTapAt = 0;
       suppressBackdropTapUntil = now + BACKDROP_TAP_GUARD_MS;
       suppressDoubleClickUntil = now + BACKDROP_TAP_GUARD_MS;
       toggleZoom();
     } else {
       lastTapAt = now;
+      if (isTouchMobilePlatform()) {
+        suppressBackdropTapUntil = now + BACKDROP_TAP_GUARD_MS;
+        scheduleSingleTapClose();
+      }
     }
     restoreSwipeOffsets();
     return;
   }
 
+  lastTapAt = 0;
   if (panned) {
     isDragging.value = false;
     suppressBackdropTapUntil = Date.now() + BACKDROP_TAP_GUARD_MS;
@@ -1088,7 +1124,10 @@ function handleBackdropClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
   if (!target) return;
 
-  if (target.tagName.toLowerCase() === 'img') return;
+  if (target.tagName.toLowerCase() === 'img') {
+    if (isTouchMobilePlatform()) scheduleSingleTapClose();
+    return;
+  }
   if (target.closest('.viewer-topbar') || target.closest('.viewer-bottombar') || target.closest('.nav-arrow') || target.closest('.raw-image-btn') || target.closest('.viewer-btn')) {
     return;
   }
@@ -1131,6 +1170,7 @@ onMounted(() => {
   window.addEventListener('resize', updateViewportSize);
 });
 onUnmounted(() => {
+  clearSingleTapClose();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('resize', updateViewportSize);
   clearTransitionTimer();

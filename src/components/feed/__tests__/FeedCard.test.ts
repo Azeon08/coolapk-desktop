@@ -466,6 +466,57 @@ describe('动态卡片编辑记录', () => {
     expect(wrapper.find('.stub-comments').text()).toBe('1 / 22');
   });
 
+  it.each([false, true])('详情首屏操作栏不等待评论，移动底栏脱离动画容器（移动=%s）', async officialMobileDetail => {
+    let resolveReplies!: (value: any) => void;
+    mocks.getFeedReplies.mockReturnValue(new Promise(resolve => { resolveReplies = resolve; }));
+    const pageVisible = ref(true);
+    const host = document.createElement('div');
+    host.style.transform = 'translateX(96px)';
+    host.style.overflow = 'hidden';
+    document.body.appendChild(host);
+    const wrapper = mount(FeedCard, {
+      attachTo: host,
+      props: {
+        feed: { id: 'first-frame', uid: '456', username: '作者', message: '正文', replynum: 1 },
+        detailMode: true, officialMobileDetail, autoOpenComments: true,
+      },
+      global: {
+        provide: { [feedPageVisibleKey as symbol]: pageVisible },
+        stubs: {
+          FeedHeader: true, FeedContent: true, FeedImageGrid: true,
+          FeedActionBar: { template: '<div class="test-first-frame-actions">操作栏</div>' },
+          FeedCommentSection: { props: ['comments'], template: '<div class="test-first-frame-comments">{{ comments.length }}</div>' },
+          ForwardDialog: true, AppDialog: true, FeedDyhShareDialog: true,
+          FeedShareImageDialog: true, FeedInteractionListDialog: true, FeedCollectionPickerDialog: true,
+        },
+      },
+    });
+    try {
+      await flushPromises();
+      const actions = document.querySelector<HTMLElement>('.test-first-frame-actions')!;
+      expect(actions).not.toBeNull();
+      expect(actions.style.display).not.toBe('none');
+      expect(host.contains(actions)).toBe(!officialMobileDetail);
+      expect(wrapper.get('.test-first-frame-comments').text()).toBe('0');
+      resolveReplies({ data: [{ id: 'reply-1', message: '评论内容' }] });
+      await flushPromises();
+      expect(wrapper.get('.test-first-frame-comments').text()).toBe('1');
+      expect(document.querySelector('.test-first-frame-actions')).toBe(actions);
+      if (officialMobileDetail) {
+        pageVisible.value = false;
+        await nextTick();
+        expect(actions.style.display).toBe('none');
+        pageVisible.value = true;
+        await nextTick();
+        expect(actions.style.display).not.toBe('none');
+      }
+    } finally {
+      wrapper.unmount();
+      host.remove();
+    }
+    expect(document.querySelector('.test-first-frame-actions')).toBeNull();
+  });
+
   it('展开动态评论时自动读取后续分页', async () => {
     mocks.getFeedReplies.mockImplementation(async (_feedId: string, page: number) => ({
       data: Array.from({ length: page === 3 ? 5 : 10 }, (_, index) => ({

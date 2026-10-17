@@ -203,23 +203,26 @@
     <p v-if="officialMobileDetail && (publishedLocation || isEdited)" class="official-published-location">
       <span v-if="publishedLocation">发布于{{ publishedLocation }}</span><span v-if="publishedLocation && isEdited"> · </span><button v-if="isEdited" type="button" class="official-edited-status" @click.stop="openHistoryDialog">已编辑</button>
     </p>
-    <FeedActionBar
-      v-show="!officialMobileDetail || (componentActive && pageVisible && !hasBlockingOverlay)"
-      :official-detail="officialMobileDetail"
-      @write-comment="writeMobileComment"
-      :feed-id="feed.id"
-      :likenum="feed.likenum"
-      :replynum="feed.replynum"
-      :favnum="favnum"
-      :sharenum="feed.sharenum"
-      :favorited="isFav"
-      :user-action="feed.userAction"
-      @open-comment="officialMobileDetail ? scrollToMobileComments() : toggleComments()"
-      @toggle-fav="toggleFav"
-      @forward="openForwardDialog"
-      @open-like-list="openLikeList"
-      @open-forward-list="openForwardList"
-    />
+    <!-- 移动详情底栏脱离路由动画的 transform 和滚动裁剪，首屏即可固定在视口底部。 -->
+    <Teleport to="body" :disabled="!officialMobileDetail">
+      <FeedActionBar
+        v-show="!officialMobileDetail || (componentActive && pageVisible && !hasBlockingOverlay)"
+        :official-detail="officialMobileDetail"
+        @write-comment="writeMobileComment"
+        :feed-id="feed.id"
+        :likenum="feed.likenum"
+        :replynum="feed.replynum"
+        :favnum="favnum"
+        :sharenum="feed.sharenum"
+        :favorited="isFav"
+        :user-action="feed.userAction"
+        @open-comment="officialMobileDetail ? scrollToMobileComments() : toggleComments()"
+        @toggle-fav="toggleFav"
+        @forward="openForwardDialog"
+        @open-like-list="openLikeList"
+        @open-forward-list="openForwardList"
+      />
+    </Teleport>
 
     <div v-if="showComments" class="inline-comment-wrapper" @click.stop="touchActiveComments(feed.id)">
       <FeedCommentSection

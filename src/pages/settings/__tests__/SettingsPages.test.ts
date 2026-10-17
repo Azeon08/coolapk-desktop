@@ -368,6 +368,50 @@ describe('设置页面交互', () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
   });
 
+  it('设备页仅点击生成按钮后为登录账号启用生成值，不覆盖手动配置', async () => {
+    const manual = { loggedIn: true, deviceCode: 'manual-code', deviceId: 'DUmanual123456', deviceIdSource: 'manual' };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'get_device_info' || command === 'use_saved_device_identity') return { code: 200, data: manual };
+      if (command === 'generate_device_identity') return { code: 200, data: { ...manual, deviceId: 'DUgenerated123456', deviceIdSource: 'generated_account' } };
+      return undefined;
+    });
+    const { wrapper, settings } = mountPage(DeviceSettingsPage);
+    settings.settings.deviceFingerprint.deviceId = 'DUmanual123456';
+    try {
+      await flushPromises();
+      expect(invoke).not.toHaveBeenCalledWith('generate_device_identity');
+      const generate = wrapper.findAll('button').find(button => button.text() === '自动生成并使用')!;
+      await generate.trigger('click');
+      await flushPromises();
+      expect(invoke).toHaveBeenCalledWith('generate_device_identity');
+      expect(wrapper.text()).toContain('本次登录生成（DUgenerated123456）');
+      expect(settings.settings.deviceFingerprint.deviceId).toBe('DUmanual123456');
+      await wrapper.findAll('button').find(button => button.text() === '使用已保存配置')!.trigger('click');
+      await flushPromises();
+      expect(wrapper.text()).toContain('手动配置（DUmanual123456）');
+    } finally { wrapper.unmount(); vi.mocked(invoke).mockResolvedValue(undefined); }
+  });
+
+  it('生成期间禁用按钮，失败后保留原设备信息并允许重试', async () => {
+    let rejectGeneration!: (reason: Error) => void;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'get_device_info') return { code: 200, data: { loggedIn: false, deviceCode: 'guest', deviceId: 'DUguest123456', deviceIdSource: 'generated_guest' } };
+      if (command === 'generate_device_identity') return await new Promise((_resolve, reject) => { rejectGeneration = reject; });
+      return undefined;
+    });
+    const { wrapper } = mountPage(DeviceSettingsPage);
+    try {
+      await flushPromises();
+      const generate = wrapper.findAll('button').find(button => button.text() === '自动生成并使用')!;
+      await generate.trigger('click');
+      expect(generate.attributes('disabled')).toBeDefined();
+      rejectGeneration(new Error('获取失败'));
+      await flushPromises();
+      expect(generate.attributes('disabled')).toBeUndefined();
+      expect(wrapper.text()).toContain('游客自动生成（DUguest123456）');
+    } finally { wrapper.unmount(); vi.mocked(invoke).mockResolvedValue(undefined); }
+  });
+
   it('下载页展示缓存总量与明细', async () => {
     const { wrapper } = mountPage(DownloadSettingsPage);
     await flushPromises();

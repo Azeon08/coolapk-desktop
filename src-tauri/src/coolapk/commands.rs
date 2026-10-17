@@ -2421,6 +2421,21 @@ pub fn get_device_info(state: State<'_, AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+pub async fn initialize_device_identity(state: State<'_, AppState>) -> Result<Value, String> {
+    state.client.initialize_device_identity().await
+}
+
+#[tauri::command]
+pub async fn generate_device_identity(state: State<'_, AppState>) -> Result<Value, String> {
+    state.client.generate_device_identity().await
+}
+
+#[tauri::command]
+pub fn use_saved_device_identity(state: State<'_, AppState>) -> Result<Value, String> {
+    state.client.use_saved_device_identity()
+}
+
+#[tauri::command]
 pub async fn save_cookie_securely(
     state: State<'_, AppState>,
     cookie_str: String,

@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import './styles/index.css';
 import 'virtual:android-icons.css';
@@ -143,6 +144,11 @@ async function setupDeepLinkHandling() {
 async function bootstrap() {
   await initializeAndroidSafeArea();
   await settingsStore.initializeSettings();
+  // 原生层已恢复登录 Cookie：游客生成并缓存 DUID，已登录时不会自动获取或启用。
+  if (isTauri()) {
+    try { await invoke('initialize_device_identity'); }
+    catch { logDiagnostic('warn', 'device', 'identity_initialization_failed'); }
+  }
   logDiagnostic('info', 'app', 'settings-ready');
   app.mount('#app');
   // 设置文件在应用挂载前读取；缩放等依赖 #app 的外观设置需在挂载后再应用一次。

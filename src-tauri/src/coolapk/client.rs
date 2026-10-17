@@ -252,6 +252,8 @@ pub struct CoolapkClient {
     device_code: RwLock<String>,
     /// 服务端验证码凭证独立于登录态，仅在再次验证成功时替换。
     captcha_validation: RwLock<Option<String>>,
+    generated_identity: RwLock<super::shuzilm::IdentityState>,
+    identity_generation: tokio::sync::Mutex<()>,
 }
 
 pub struct ProxiedVideoResponse {
@@ -1093,6 +1095,8 @@ impl CoolapkClient {
             native_device_profile,
             device_code: RwLock::new(device_code),
             captcha_validation: RwLock::new(None),
+            generated_identity: RwLock::new(super::shuzilm::IdentityState::default()),
+            identity_generation: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -1155,12 +1159,102 @@ impl CoolapkClient {
 
     /// 获取当前用户配置的有效数盟设备 ID（设备ID / ShuzlmID）
     pub fn effective_custom_device_id(&self) -> Option<String> {
+        let uid = self.current_uid();
+        if let Some(id) = self.generated_identity.read().ok()
+            .and_then(|state| state.active_id(uid.as_deref()).map(str::to_owned)) {
+            return Some(id);
+        }
         let guard = self.device_profile.read().ok()?;
         guard
             .device_id
             .as_ref()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+    }
+
+    /// 启动时恢复游客 DUID；已有登录 Cookie 时不生成，也不启用游客值。
+    pub async fn initialize_device_identity(&self) -> Result<Value, String> {
+        {
+            let cached = self.load_accounts_root().get("generatedGuestDeviceId").and_then(Value::as_str)
+                .filter(|id| super::shuzilm::valid_duid(id)).map(str::to_owned);
+            let mut state = self.generated_identity.write().map_err(|_| "无法读取设备 ID 状态")?;
+            state.automatic = true;
+            if state.guest_id.is_none() { state.guest_id = cached; }
+        }
+        self.ensure_guest_device_identity().await;
+        self.sync_device_code();
+        self.get_device_info()
+    }
+
+    async fn ensure_guest_device_identity(&self) {
+        let should_generate = self.generated_identity.read().map(|state|
+            state.should_generate_guest(self.current_uid().is_some())).unwrap_or(false);
+        if !should_generate { return; }
+        // 所有首次游客请求共享一次生成；网络失败后一分钟内不自动重复请求。
+        let _generation = self.identity_generation.lock().await;
+        let should_generate = self.generated_identity.read().map(|state|
+            state.should_generate_guest(self.current_uid().is_some())).unwrap_or(false);
+        if !should_generate { return; }
+        match super::shuzilm::generate().await {
+            Ok(id) => {
+                if let Ok(mut state) = self.generated_identity.write() {
+                    state.guest_id = Some(id.clone());
+                    state.error = None;
+                    state.last_failure = None;
+                }
+                let mut root = self.load_accounts_root();
+                root["generatedGuestDeviceId"] = json!(id);
+                self.save_accounts_root(&root);
+                // 若等待期间发生登录，这里会按当前账号重新选设备，不会启用游客值。
+                self.sync_device_code();
+            }
+            Err(error) => {
+                if let Ok(mut state) = self.generated_identity.write() {
+                    state.last_failure = Some(std::time::Instant::now());
+                    state.error = Some(error);
+                }
+                log::warn!("device.duid_generation_failed context=guest");
+            }
+        }
+    }
+
+    /// 仅用户点击才为当前登录账号生成并使用；不改写保存的手动设备 ID。
+    pub async fn generate_device_identity(&self) -> Result<Value, String> {
+        self.generate_device_identity_with(super::shuzilm::generate()).await
+    }
+
+    async fn generate_device_identity_with(
+        &self,
+        generation: impl std::future::Future<Output = Result<String, String>>,
+    ) -> Result<Value, String> {
+        let uid = self.current_uid();
+        let is_guest = uid.is_none();
+        let epoch = self.generated_identity.read().map_err(|_| "无法读取设备 ID 状态")?.auth_epoch;
+        let _generation = self.identity_generation.lock().await;
+        let id = generation.await?;
+        {
+            let mut state = self.generated_identity.write().map_err(|_| "无法读取设备 ID 状态")?;
+            if state.auth_epoch != epoch || self.current_uid() != uid {
+                return Err("登录状态已变化，生成结果未应用，请重新点击生成".into());
+            }
+            if let Some(uid) = uid { state.account_id = Some((uid, id.clone())); }
+            else { state.guest_id = Some(id.clone()); }
+            state.error = None;
+            state.last_failure = None;
+        }
+        if is_guest {
+            let mut root = self.load_accounts_root();
+            root["generatedGuestDeviceId"] = json!(id);
+            self.save_accounts_root(&root);
+        }
+        self.sync_device_code();
+        self.get_device_info()
+    }
+
+    pub fn use_saved_device_identity(&self) -> Result<Value, String> {
+        self.generated_identity.write().map_err(|_| "无法读取设备 ID 状态")?.session_changed();
+        self.sync_device_code();
+        self.get_device_info()
     }
 
     /// 获取用户手动填写的 ddid Cookie 值。
@@ -1324,12 +1418,22 @@ impl CoolapkClient {
             .map_err(|_| "failed to read login state".to_string())?
             .is_some();
         let device_id = self.effective_custom_device_id();
+        let uid = self.current_uid();
+        let (identity_source, generation_error) = {
+            let state = self.generated_identity.read().map_err(|_| "无法读取设备 ID 状态")?;
+            let source = if state.active_id(uid.as_deref()).is_some() {
+                if uid.is_some() { "generated_account" } else { "generated_guest" }
+            } else if device_id.is_some() { "manual" } else { "default" };
+            (source, if uid.is_none() { state.error.clone() } else { None })
+        };
         Ok(json!({
             "code": 200,
             "data": {
                 "loggedIn": logged_in,
                 "deviceCode": code,
                 "deviceId": device_id,
+                "deviceIdSource": identity_source,
+                "deviceIdGenerationError": generation_error,
                 "defaultProfile": {
                     "source": if self.native_device_profile.model.is_some() { "native" } else { "compatibility" },
                     "platform": std::env::consts::OS,
@@ -1683,6 +1787,7 @@ impl CoolapkClient {
     }
 
     pub fn set_user_cookie(&self, cookie: String) -> Result<(), String> {
+        let previous_cookie = self.get_user_cookie();
         let safe_ascii = Self::sanitize_cookie(&cookie);
 
         let mut stored = self
@@ -1695,6 +1800,9 @@ impl CoolapkClient {
             Some(safe_ascii)
         };
         drop(stored);
+        if previous_cookie != self.get_user_cookie() {
+            if let Ok(mut state) = self.generated_identity.write() { state.session_changed(); }
+        }
         // 登录态变化（登录/登出/切换账号）后同步设备码
         self.sync_device_code();
         Ok(())
@@ -1782,6 +1890,7 @@ impl CoolapkClient {
         if api_origin != "https://api.coolapk.com" && api_origin != "https://api2.coolapk.com" {
             return Err("不受信任的酷安 API 主机".to_string());
         }
+        self.ensure_guest_device_identity().await;
         let validation = self.validation_for_request(validation)?;
         let started = std::time::Instant::now();
         let log_path = path.split('?').next().unwrap_or(path);
@@ -7268,6 +7377,7 @@ impl CoolapkClient {
             .map_err(|_| "failed to lock login state".to_string())?;
         *stored = None;
         drop(stored);
+        if let Ok(mut state) = self.generated_identity.write() { state.session_changed(); }
         // 清空当前登录标记（保留账户记录，便于下次快速切换）
         let mut root = self.load_accounts_root();
         root["lastLoginUid"] = json!("");

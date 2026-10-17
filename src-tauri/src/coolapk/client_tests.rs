@@ -1,6 +1,85 @@
 use super::*;
 
 #[test]
+fn generated_duid_is_guest_default_and_account_explicit_only() {
+    let client = CoolapkClient::new();
+    client.update_device_profile(DeviceProfile { device_id: Some("DUmanual123456".into()), ..Default::default() });
+    client.generated_identity.write().unwrap().guest_id = Some("DUguest123456".into());
+    client.sync_device_code();
+    let assert_identity = |expected: &str| {
+        assert_eq!(client.effective_custom_device_id().as_deref(), Some(expected));
+        let mut encoded: String = client.device_code.read().unwrap().chars().rev().collect();
+        while encoded.len() % 4 != 0 { encoded.push('='); }
+        let decoded = String::from_utf8(BASE64.decode(encoded).unwrap()).unwrap();
+        assert_eq!(decoded.split(';').next().unwrap(), expected);
+    };
+    assert_identity("DUguest123456");
+    client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
+    assert_identity("DUmanual123456");
+    client.generated_identity.write().unwrap().account_id = Some(("10001".into(), "DUoptin123456".into()));
+    client.sync_device_code();
+    assert_identity("DUoptin123456");
+    // 常规机型同步不能把用户本次点击的生成值覆盖掉，也不覆盖手动配置。
+    client.update_device_profile(DeviceProfile { device_id: Some("DUmanual123456".into()), ..Default::default() });
+    assert_identity("DUoptin123456");
+    client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
+    assert_identity("DUoptin123456");
+    client.set_user_cookie("uid=10001; SESSID=reauthenticated-session".into()).unwrap();
+    assert_identity("DUmanual123456");
+    client.generated_identity.write().unwrap().account_id = Some(("10001".into(), "DUoptin123456".into()));
+    client.set_user_cookie("uid=10002; SESSID=another-session".into()).unwrap();
+    assert_identity("DUmanual123456");
+    client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
+    assert_identity("DUmanual123456");
+    client.clear_user_cookie().unwrap();
+    assert_identity("DUguest123456");
+}
+
+#[tokio::test]
+async fn pending_duid_generation_is_discarded_when_login_changes() {
+    let client = CoolapkClient::new();
+    client.update_device_profile(DeviceProfile { device_id: Some("DUmanual123456".into()), ..Default::default() });
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+    let pending = client.generate_device_identity_with(async {
+        started_tx.send(()).unwrap();
+        finish_rx.await.unwrap();
+        Ok("DUlate_result123456".to_string())
+    });
+    let login = async {
+        started_rx.await.unwrap();
+        client.set_user_cookie("uid=10001; SESSID=new-session".into()).unwrap();
+        finish_tx.send(()).unwrap();
+    };
+    let (result, _) = tokio::join!(pending, login);
+    assert!(result.unwrap_err().contains("登录状态已变化"));
+    assert_eq!(client.effective_custom_device_id().as_deref(), Some("DUmanual123456"));
+    assert!(client.generated_identity.read().unwrap().guest_id.is_none());
+    assert!(client.generated_identity.read().unwrap().account_id.is_none());
+}
+
+#[tokio::test]
+async fn guest_duid_cache_restores_without_network_and_never_activates_for_login() {
+    let mut random = [0; 8];
+    getrandom::fill(&mut random).unwrap();
+    let folder = std::env::temp_dir().join(format!("coolapk-duid-{}", hex::encode(random)));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("accounts.json"), json!({
+        "generatedGuestDeviceId": "DUcached123456", "accounts": [], "lastLoginUid": ""
+    }).to_string()).unwrap();
+    let client = CoolapkClient::new();
+    client.persist_cookie_to(folder.join("session_cookie.txt"));
+    let info = client.initialize_device_identity().await.unwrap();
+    assert_eq!(info["data"]["deviceId"], "DUcached123456");
+    assert_eq!(info["data"]["deviceIdSource"], "generated_guest");
+    client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
+    let info = client.initialize_device_identity().await.unwrap();
+    assert!(info["data"]["deviceId"].is_null());
+    assert_eq!(info["data"]["deviceIdSource"], "default");
+    std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[test]
 fn test_feed_cleaning_preserves_private_visibility() {
     for raw in [
         json!({ "id": "42", "uid": "123", "username": "作者", "message": "正文", "publish_status": 1 }),

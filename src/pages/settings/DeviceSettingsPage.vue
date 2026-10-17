@@ -13,8 +13,8 @@
         </div>
         <div class="status-row">
           <span class="status-key">数盟设备 ID（用于生成 X-App-Device）</span>
-          <span :class="['status-value', currentDeviceId ? 'status-on' : 'status-warn']" :title="currentDeviceId || undefined">
-            {{ currentDeviceId ? '已配置（' + currentDeviceId + '）' : '未配置（敏感写操作可能受限）' }}
+          <span :class="['status-value', activeDeviceId ? 'status-on' : 'status-warn']" :title="activeDeviceId || undefined">
+            {{ activeDeviceId ? identitySourceLabel + '（' + activeDeviceId + '）' : '未配置（敏感写操作可能受限）' }}
           </span>
         </div>
         <div class="status-row">
@@ -31,7 +31,7 @@
         </details>
         <p class="tray-tip">
           <i class="fas fa-info-circle"></i>
-          粘贴手机官方酷安复制的设备日志，保存后会用于生成应用请求的设备码。
+          未登录时自动获取并复用游客设备 ID；登录后使用已保存的手动配置，点击“自动生成并使用”才启用生成值。
         </p>
       </div>
     </div>
@@ -42,6 +42,9 @@
       <div class="setting-card">
         <p class="card-desc">
           粘贴官方 Android 酷安复制的完整日志或设备 ID，保存后用于应用请求的设备标识。iOS 官方酷安没有下述获取入口，可在电脑上的安卓虚拟机中安装官方 Android 酷安，获取设备 ID 后传到 iPhone / iPad，手动粘贴到此处并保存。
+        </p>
+        <p class="card-desc">
+          自动生成会联网向数盟获取 DUID，不会发送酷安账号或 Cookie。游客生成值保存在本机复用；登录后的生成值仅用于当前登录会话，退出或切换账号后停用，不覆盖手动配置。
         </p>
 
         <div class="device-id-input-row">
@@ -67,6 +70,13 @@
             <i class="fas fa-paste"></i>
             读取剪贴板
           </button>
+          <button type="button" class="action-btn" :disabled="generatingDeviceId" :aria-busy="generatingDeviceId" @click="generateDeviceId">
+            <i :class="generatingDeviceId ? 'fas fa-spinner fa-spin' : 'fas fa-wand-magic-sparkles'"></i>
+            {{ generatingDeviceId ? '正在生成...' : '自动生成并使用' }}
+          </button>
+          <button v-if="deviceInfo?.deviceIdSource === 'generated_account'" type="button" class="action-btn" :disabled="generatingDeviceId" @click="useSavedDeviceId">
+            使用已保存配置
+          </button>
           <button
             type="button"
             class="action-btn primary-btn"
@@ -88,11 +98,15 @@
           </button>
         </div>
 
+        <div v-if="deviceInfo?.deviceIdGenerationError" class="extract-tip error-tip" role="status">
+          {{ deviceInfo.deviceIdGenerationError }}；可点击“自动生成并使用”重试。
+        </div>
+
         <div v-if="parsedDeviceId" class="extract-tip success-tip">
           <i class="fas fa-check-circle"></i>
           <span>
             已识别有效设备 ID：<code>{{ parsedDeviceId }}</code>
-            {{ parsedDeviceId === currentDeviceId ? '（当前生效中）' : '（点击“保存”生效）' }}
+            {{ parsedDeviceId === activeDeviceId ? '（当前生效中）' : parsedDeviceId === currentDeviceId ? '（已保存，当前未使用）' : '（点击“保存”保存手动配置）' }}
           </span>
         </div>
         <div v-else-if="deviceIdInput.trim()" class="extract-tip error-tip">
@@ -385,6 +399,8 @@ const emit = defineEmits<{ deviceIdSaved: [] }>();
 /** 当前生效设备信息（Rust 端查询）：登录态 + 设备码 + 设备ID */
 const deviceInfo = ref<{
   loggedIn: boolean; deviceCode: string; deviceId?: string;
+  deviceIdSource?: 'generated_guest' | 'generated_account' | 'manual' | 'default';
+  deviceIdGenerationError?: string;
   defaultProfile?: { source: string; brand: string; model: string; userAgent: string };
 } | null>(null);
 
@@ -408,6 +424,41 @@ watch(
 );
 
 const settingsStore = useSettingsStore();
+const generatingDeviceId = ref(false);
+const activeDeviceId = computed(() => deviceInfo.value?.deviceId || currentDeviceId.value);
+const identitySourceLabel = computed(() => {
+  if (deviceInfo.value?.deviceIdSource === 'generated_guest') return '游客自动生成';
+  if (deviceInfo.value?.deviceIdSource === 'generated_account') return '本次登录生成';
+  return '手动配置';
+});
+
+async function generateDeviceId() {
+  if (generatingDeviceId.value) return;
+  generatingDeviceId.value = true;
+  try {
+    const res = await invoke<any>('generate_device_identity');
+    if (res?.code !== 200 || !res.data?.deviceId) throw new Error('未获取到有效设备 ID');
+    deviceInfo.value = res.data;
+    showToast('设备 ID 已生成并用于后续请求', 'success');
+    emit('deviceIdSaved');
+  } catch (error) {
+    // 原生层只返回受控错误，不展示服务端原始响应或生成请求中的标识。
+    showToast(error instanceof Error ? error.message : String(error), 'error');
+  } finally {
+    generatingDeviceId.value = false;
+  }
+}
+
+async function useSavedDeviceId() {
+  try {
+    const res = await invoke<any>('use_saved_device_identity');
+    if (res?.code !== 200) throw new Error('无法恢复设备配置');
+    deviceInfo.value = res.data;
+    showToast('已恢复使用已保存的设备配置', 'success');
+  } catch {
+    showToast('恢复设备配置失败，请重试', 'error');
+  }
+}
 
 async function refreshDeviceProfile() {
   await nextTick();
@@ -472,8 +523,10 @@ async function saveCustomDeviceId() {
     showToast('设备 ID 已保存，但同步请求设备码失败，请重试', 'error');
     return;
   }
+  try { await invoke('use_saved_device_identity'); }
+  catch { showToast('设备 ID 已保存，但切换生效配置失败，请重试', 'error'); return; }
   await loadDeviceInfo();
-  showToast('设备 ID 已保存，可以重试发帖或评论', 'success');
+  showToast(deviceInfo.value?.deviceIdSource === 'generated_guest' ? '手动设备 ID 已保存，登录后使用；游客继续使用自动生成值' : '设备 ID 已保存，可以重试发帖或评论', 'success');
   emit('deviceIdSaved');
 }
 
@@ -488,6 +541,8 @@ async function clearSavedDeviceId() {
     showToast('设备 ID 已清除，但同步请求设备码失败，请重试', 'error');
     return;
   }
+  try { await invoke('use_saved_device_identity'); }
+  catch { showToast('设备 ID 已清除，但同步生效配置失败，请重试', 'error'); return; }
   await loadDeviceInfo();
   showToast('数盟设备 ID 已清除', 'info');
 }

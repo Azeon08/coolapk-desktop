@@ -199,7 +199,7 @@
         v-for="c in sortedComments"
         :key="c.id || c.uid"
         class="comment-row"
-        :class="{ 'notification-comment-target': String(c.id) === targetReplyId }"
+        :class="{ 'notification-comment-target': String(c.id) === targetReplyId && !hasInlineTargetReply }"
         data-context-kind="comment"
         :data-context-feed-id="feedId"
         :data-context-comment-id="c.id"
@@ -1778,6 +1778,11 @@ const sortedComments = computed(() => {
   // APK 的楼主筛选由 fromFeedAuthor=1 决定顺序，不叠加当前排序按钮的本地排序。
   return authorOnly.value ? visibleComments : sortComments(visibleComments, commentSortMode.value);
 });
+
+// 同一回复可能同时出现在楼中楼预览和完整楼层中，只突出更紧凑的楼中楼目标。
+const hasInlineTargetReply = computed(() => Boolean(props.targetReplyId) && sortedComments.value.some(
+  floor => getVisibleSubReplies(floor).some(reply => String(reply.id) === props.targetReplyId),
+));
 
 async function loadTargetReply() {
   const request = ++targetRequest;

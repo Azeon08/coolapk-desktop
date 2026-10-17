@@ -34,6 +34,40 @@ vi.mock('../../../api/coolapk', () => ({
 import FeedCommentSection from '../FeedCommentSection.vue';
 
 describe('评论完整信息展示', () => {
+  it('目标同时出现在楼中楼和完整楼层时只保留小框，并定位到楼中楼', async () => {
+    const target = { id: '222', feedId: '333', rid: '0', rrid: '0', message: '目标回复', username: '回复者' };
+    mocks.getReplyDetail.mockResolvedValue({ data: target });
+    const wrapper = mountSection({}, {
+      feedId: '333', targetReplyId: '222', loading: true,
+      comments: [{ id: '111', message: '父评论', replyRows: [target] }, target],
+    });
+    try {
+      await flushPromises();
+      expect(wrapper.findAll('.comment-row')).toHaveLength(2);
+      expect(wrapper.findAll('.notification-comment-target')).toHaveLength(1);
+      const highlight = wrapper.get('.notification-comment-target');
+      expect(highlight.classes()).toContain('sub-reply-row');
+      expect(highlight.attributes('data-context-comment-id')).toBe('222');
+      expect(wrapper.find('.comment-row.notification-comment-target').exists()).toBe(false);
+      const scroll = vi.fn();
+      (highlight.element as HTMLElement).scrollIntoView = scroll;
+      await wrapper.setProps({ loading: false });
+      await flushPromises();
+      expect(scroll).toHaveBeenCalledWith({ block: 'center', behavior: 'auto' });
+    } finally { wrapper.unmount(); }
+  });
+
+  it('只有完整楼层目标时保留高亮，仍能定位一级评论', async () => {
+    const target = { id: '222', feedId: '333', message: '目标评论' };
+    mocks.getReplyDetail.mockResolvedValue({ data: target });
+    const wrapper = mountSection({}, { feedId: '333', comments: [target], targetReplyId: '222' });
+    try {
+      await flushPromises();
+      expect(wrapper.findAll('.notification-comment-target')).toHaveLength(1);
+      expect(wrapper.get('.notification-comment-target').classes()).toContain('comment-row');
+    } finally { wrapper.unmount(); }
+  });
+
   it('通知目标不在第一页时补齐根楼层和回复并高亮', async () => {
     mocks.getReplyDetail.mockImplementation(async (id: string) => ({ data: id === '222'
       ? { id: '222', feedId: '333', rrid: '111', rid: '111', message: '通知目标回复', username: '回复者' }

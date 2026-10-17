@@ -151,7 +151,7 @@ describe('updateChecker', () => {
       const mockRelease = {
         tag_name: 'v9.9.9',
         body: '这是升级日志说明',
-        html_url: 'https://github.com/daimiaopeng/coolapk-desktop/releases/tag/v9.9.9',
+        html_url: 'https://github.com/coolapk-desktop/coolapk-desktop/releases/tag/v9.9.9',
         assets: [
           {
             name: 'coolapk-desktop_9.9.9_x64-setup.exe',
@@ -251,6 +251,61 @@ describe('updateChecker', () => {
       expect(info.hasNew).toBe(false);
       expect(info.releaseNotes).toBe('暂无当前版本的更新日志。');
       expect(info.publishedAt).toBeUndefined();
+    });
+  });
+
+  describe('GitHub 更新源', () => {
+    const repository = 'coolapk-desktop/coolapk-desktop';
+    const platform = { os: 'windows', arch: 'x86_64' } as const;
+    const release = (version: string, arch = 'x64') => ({
+      tag_name: `v${version}`, body: repository,
+      html_url: `https://github.com/${repository}/releases/tag/v${version}`,
+      assets: [{ name: `coolapk-desktop_${version}_${arch}-setup.exe`, browser_download_url: `https://github.com/${repository}/releases/download/v${version}/coolapk-desktop_${version}_${arch}-setup.exe` }],
+    });
+    const response = (value: any, status = 200) => ({ ok: status === 200, status, json: async () => value }) as Response;
+
+    it('稳定渠道只检查新仓库并选择安装包', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response(release('9.0.0')));
+      const result = await checkLatestRelease('stable', platform);
+      expect(result.latestVersion).toBe('v9.0.0');
+      expect(result.releaseNotes).toBe(repository);
+      expect(result.downloadUrl).toContain(repository);
+      expect(result.installerUrl).toContain(repository);
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([`https://api.github.com/repos/${repository}/releases/latest`]);
+    });
+
+    it('仓库没有可用发布版本时返回明确错误', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(response(null, 404));
+      await expect(checkLatestRelease('stable', platform)).rejects.toThrow('未从 GitHub 获取到可用的发布版本');
+    });
+
+    it('测试渠道合并新仓库的测试版列表与正式版，列表失败时仍保留正式版', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const source = String(url);
+        if (source.includes('?')) throw new Error('列表不可用');
+        return response(release('8.0.0'));
+      });
+      const result = await checkLatestRelease('beta', platform);
+      expect(result).toMatchObject({ latestVersion: 'v8.0.0', releaseNotes: repository });
+    });
+
+    it('测试渠道优先展示新仓库中的 beta 发布', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => String(url).includes('?')
+        ? response([{ ...release('9.0.0-beta.1'), prerelease: true }, release('8.0.0')])
+        : response(release('8.0.0')));
+      await expect(checkLatestRelease('beta', platform)).resolves.toMatchObject({ latestVersion: 'v9.0.0-beta.1', releaseNotes: repository });
+    });
+
+    it('当前版本日志只从新仓库读取', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const source = String(url);
+        if (source.includes('/tags/')) return response(release(APP_VERSION));
+        return response(release('1.0.0'));
+      });
+      const result = await checkLatestRelease('stable', platform);
+      expect(result.hasNew).toBe(false);
+      expect(result.releaseNotes).toBe(repository);
+      expect(result.downloadUrl).toContain(repository);
     });
   });
 

@@ -34,19 +34,23 @@
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAppStore } from '../../stores/app';
+import { useSettingsStore } from '../../stores/settings';
 import { activateHomeTab } from '../../utils/homeTab';
 
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
+const settingsStore = useSettingsStore();
 
-const leftItems = [
+const leftItems = computed(() => [
   { path: '/', label: '首页', icon: 'fas fa-house' },
-  { path: '/digital', label: '数码', icon: 'fas fa-microchip' },
-];
+  ...(settingsStore.settings.navVisibility?.digital !== false
+    ? [{ path: '/digital', label: '数码', icon: 'fas fa-microchip' }] : []),
+]);
 
 const rightItems = computed(() => [
-  { path: '/discover', label: '发现', icon: 'fas fa-compass' },
+  ...(settingsStore.settings.navVisibility?.discover !== false
+    ? [{ path: '/discover', label: '发现', icon: 'fas fa-compass' }] : []),
   { path: '/me', label: '我的', icon: 'fas fa-user' },
 ]);
 
@@ -88,7 +92,8 @@ function activate(path: string) {
     box-shadow: 0 10px 32px #00000016, 0 2px 8px #00000008, inset 0 1px 0 var(--nav-glass-edge), inset 0 -1px 0 #ffffff30;
     padding: 4px;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     flex: 0 0 auto;
     align-items: center;
     min-height: var(--mobile-bottom-nav-height);

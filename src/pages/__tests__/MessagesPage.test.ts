@@ -6,7 +6,6 @@ import { createPinia, setActivePinia } from 'pinia';
 const mocks = vi.hoisted(() => ({
   router: { push: vi.fn(), replace: vi.fn() },
   route: { query: { uid: '20002' } as Record<string, string> },
-  uploadFeedbackDiagnosticImage: vi.fn(),
   listMessages: vi.fn(),
   listChatHistory: vi.fn(),
   sendPrivateMessage: vi.fn(),
@@ -40,11 +39,6 @@ vi.mock('../../utils/toast', () => ({
 
 vi.mock('../../utils/confirm', () => ({
   requestConfirmation: mocks.requestConfirmation,
-}));
-
-vi.mock('../../utils/feedbackDiagnostics', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../utils/feedbackDiagnostics')>(),
-  uploadFeedbackDiagnosticImage: mocks.uploadFeedbackDiagnosticImage,
 }));
 
 vi.mock('../../api/coolapk', () => ({
@@ -101,7 +95,6 @@ describe('MessagesPage 粘贴图片发送功能', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete mocks.route.query.feedback;
-    mocks.uploadFeedbackDiagnosticImage.mockResolvedValue('https://image.coolapk.com/feed/test.png');
     const pinia = createPinia();
     setActivePinia(pinia);
 
@@ -200,113 +193,16 @@ describe('MessagesPage 粘贴图片发送功能', () => {
     expect(area.scrollTop).toBe(atBottom ? 1300 : 400);
   });
 
-  it('反馈默认展开后可以向下缩小、向上拉高，并双击恢复默认高度', async () => {
-    mocks.route.query.feedback = '1';
-    localStorage.setItem('coolapk_messages_input_height', '160');
-    const w = await mountMessagesPage();
-    const area = w.get('.input-area');
-    expect((area.element as HTMLElement).style.height).toBe('360px');
-    w.get('.input-resizer').element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientY: 300, bubbles: true, cancelable: true }));
-    window.dispatchEvent(new MouseEvent('pointermove', { clientY: 400 }));
-    window.dispatchEvent(new MouseEvent('pointerup'));
-    await flushPromises();
-    expect((area.element as HTMLElement).style.height).toBe('260px');
-    w.get('.input-resizer').element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientY: 400, bubbles: true, cancelable: true }));
-    window.dispatchEvent(new MouseEvent('pointermove', { clientY: 260 }));
-    window.dispatchEvent(new MouseEvent('pointerup'));
-    await flushPromises();
-    expect((area.element as HTMLElement).style.height).toBe('400px');
-    // 反馈高度不写入普通私信设置，双击只恢复当前反馈的展开高度。
-    expect(localStorage.getItem('coolapk_messages_input_height')).toBe('160');
-    await w.get('.input-resizer').trigger('dblclick');
-    expect((area.element as HTMLElement).style.height).toBe('360px');
-  });
-
-  it('反馈附带原图地址，仅发送文字私信', async () => {
+  it('旧版反馈查询参数不会在私信中上传诊断日志', async () => {
     mocks.route.query.feedback = '1';
     const w = await mountMessagesPage();
-    expect(w.find('.feedback-log-option input').element.checked).toBe(true);
-    mocks.router.replace.mockClear();
+    expect(w.find('.feedback-log-option').exists()).toBe(false);
     const editor = w.find('.message-rich-editor');
-    editor.element.innerHTML = '全文加载慢';
+    editor.element.innerHTML = '普通私信';
     await editor.trigger('input');
     await w.find('.input-actions button').trigger('click');
     await flushPromises();
-    expect(mocks.uploadFeedbackDiagnosticImage).toHaveBeenCalledOnce();
-    expect(mocks.sendPrivateMessage).toHaveBeenCalledWith('20002', expect.stringContaining('诊断日志图片：https://image.coolapk.com/feed/test.png'), { retry: false });
-    expect(mocks.sendPrivateImage).not.toHaveBeenCalled();
-    expect(mocks.router.replace).not.toHaveBeenCalled();
-    expect(w.find('.feedback-log-option input').exists()).toBe(false);
-    editor.element.innerHTML = '补充说明';
-    await editor.trigger('input');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(mocks.uploadFeedbackDiagnosticImage).toHaveBeenCalledOnce();
-    expect(mocks.sendPrivateMessage).toHaveBeenLastCalledWith('20002', '补充说明');
-  });
-
-  it('取消附带日志时不读取或上传日志', async () => {
-    mocks.route.query.feedback = '1';
-    const w = await mountMessagesPage();
-    await w.find('.feedback-log-option input').setValue(false);
-    const editor = w.find('.message-rich-editor');
-    editor.element.innerHTML = '普通反馈';
-    await editor.trigger('input');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(mocks.uploadFeedbackDiagnosticImage).not.toHaveBeenCalled();
-    expect(mocks.sendPrivateMessage).toHaveBeenCalledWith('20002', '普通反馈', { retry: false });
-  });
-
-  it('文字发送失败后保留草稿，重试复用已上传的报告链接', async () => {
-    mocks.route.query.feedback = '1';
-    mocks.sendPrivateMessage.mockRejectedValueOnce(new Error('网络错误'));
-    const w = await mountMessagesPage();
-    const editor = w.find('.message-rich-editor');
-    editor.element.innerHTML = '重试反馈';
-    await editor.trigger('input');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(editor.element.textContent).toBe('重试反馈');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(mocks.uploadFeedbackDiagnosticImage).toHaveBeenCalledOnce();
-    expect(mocks.sendPrivateMessage).toHaveBeenCalledTimes(2);
-    expect(editor.element.textContent).toBe('');
-  });
-
-  it('上传失败时不发送缺失日志的反馈，允许取消日志后重试', async () => {
-    mocks.route.query.feedback = '1';
-    mocks.uploadFeedbackDiagnosticImage.mockRejectedValueOnce(new Error('上传失败'));
-    const w = await mountMessagesPage();
-    const editor = w.find('.message-rich-editor');
-    editor.element.innerHTML = '上传失败反馈';
-    await editor.trigger('input');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(mocks.sendPrivateMessage).not.toHaveBeenCalled();
-    expect(editor.element.textContent).toBe('上传失败反馈');
-    await w.find('.feedback-log-option input').setValue(false);
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    expect(mocks.sendPrivateMessage).toHaveBeenCalledWith('20002', '上传失败反馈', { retry: false });
-  });
-
-  it('日志上传期间切换账号不会把旧账号日志发送出去', async () => {
-    mocks.route.query.feedback = '1';
-    let finishUpload!: (url: string) => void;
-    mocks.uploadFeedbackDiagnosticImage.mockReturnValueOnce(new Promise<string>(resolve => { finishUpload = resolve; }));
-    const w = await mountMessagesPage();
-    const editor = w.find('.message-rich-editor');
-    editor.element.innerHTML = '账号切换反馈';
-    await editor.trigger('input');
-    await w.find('.input-actions button').trigger('click');
-    await flushPromises();
-    useAuthStore().user = { uid: 99999, username: '另一个账号' } as any;
-    finishUpload('https://image.coolapk.com/feed/test.png');
-    await flushPromises();
-    expect(mocks.sendPrivateMessage).not.toHaveBeenCalled();
-    expect(mocks.showToast).toHaveBeenCalledWith(expect.stringContaining('会话或账号已切换'), 'error');
+    expect(mocks.sendPrivateMessage).toHaveBeenCalledWith('20002', '普通私信');
   });
 
   it('手机上可从聊天返回会话列表，同时保留当前会话', async () => {

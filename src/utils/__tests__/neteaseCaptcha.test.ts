@@ -23,8 +23,15 @@ describe('neteaseCaptcha', () => {
   });
 
   it('解析仅返回 403 的验证码响应，且不误判普通 403', () => {
-    expect(extractCaptchaParamsFromError(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }))).toEqual({ captchaId: DEFAULT_COOLAPK_CAPTCHA_ID, captchaField: '_v2_post_token' });
+    expect(extractCaptchaParamsFromError(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }))).toEqual({ captchaId: DEFAULT_COOLAPK_CAPTCHA_ID, captchaField: '' });
     expect(extractCaptchaParamsFromError(JSON.stringify({ code: 403, message: '无权访问' }))).toBeNull();
+  });
+
+  it.each(['', '_v2_post_token'])('保留服务端验证码字段，包括空字段 Cookie 模式：%s', (captchaField) => {
+    for (const messageExtra of [{ captchaId: 'test', captchaField }, JSON.stringify({ captchaId: 'test', captchaField })]) {
+      expect(extractCaptchaParamsFromError({ code: 403, messageStatus: 'err_request_captcha_v2', messageExtra }))
+        .toEqual({ captchaId: 'test', captchaField });
+    }
   });
 
   it('loads the script tag into DOM', async () => {
@@ -84,9 +91,11 @@ describe('neteaseCaptcha', () => {
   });
 
   it('resolves formatted token on successful validation', async () => {
+    const popUp = vi.fn(() => { throw new Error('[NECaptcha] apiVersion: 2 unsupport popUp'); });
     const verify = vi.fn();
     (window as any).initNECaptcha = vi.fn((config, onLoad) => {
       const mockInstance = {
+        popUp,
         verify,
         refresh: vi.fn(),
         destroy: vi.fn(),
@@ -102,12 +111,14 @@ describe('neteaseCaptcha', () => {
     const token = await verifyWithCaptcha('414e5c9b866a03db03f860a1a9101672');
     expect(token).toBe('NEC:414e5c9b:mock_validate_hash_12345');
     expect(verify).toHaveBeenCalledOnce();
+    expect(popUp).not.toHaveBeenCalled();
     expect(window.initNECaptcha).toHaveBeenCalledWith(expect.objectContaining({ mode: 'popup', apiVersion: 2 }), expect.any(Function), expect.any(Function));
   });
 
   it('rejects on user cancellation or verify error', async () => {
     (window as any).initNECaptcha = vi.fn((config, onLoad) => {
       const mockInstance = {
+        popUp: vi.fn(),
         verify: vi.fn(),
         refresh: vi.fn(),
         destroy: vi.fn(),
@@ -119,5 +130,44 @@ describe('neteaseCaptcha', () => {
     });
 
     await expect(verifyWithCaptcha()).rejects.toThrow('用户取消了人机验证');
+  });
+
+  it('SDK 初始化不回调会超时，迟到的实例会被销毁', async () => {
+    vi.useFakeTimers();
+    let loaded: ((instance: any) => void) | undefined;
+    window.initNECaptcha = vi.fn((_config, onLoad) => { loaded = onLoad; });
+    const failure = expect(verifyWithCaptcha()).rejects.toThrow('验证码初始化超时');
+    await vi.advanceTimersByTimeAsync(15_000);
+    await failure;
+    const instance = { verify: vi.fn(), refresh: vi.fn(), destroy: vi.fn() };
+    loaded!(instance);
+    expect(instance.destroy).toHaveBeenCalledOnce();
+    expect(instance.verify).not.toHaveBeenCalled();
+    expect(document.querySelector('[id^="ne-captcha-"]')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('弹窗后没有验证或关闭回调也会超时清理', async () => {
+    vi.useFakeTimers();
+    const instance = { verify: vi.fn(), refresh: vi.fn(), destroy: vi.fn() };
+    window.initNECaptcha = vi.fn((config, onLoad) => {
+      onLoad?.(instance);
+      config.onReady?.();
+    });
+    const failure = expect(verifyWithCaptcha()).rejects.toThrow('验证码验证超时');
+    await vi.advanceTimersByTimeAsync(120_000);
+    await failure;
+    expect(instance.verify).toHaveBeenCalledOnce();
+    expect(instance.destroy).toHaveBeenCalledOnce();
+    expect(document.querySelector('[id^="ne-captcha-"]')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('SDK 同步抛错也清理容器和计时器', async () => {
+    vi.useFakeTimers();
+    window.initNECaptcha = vi.fn(() => { throw new Error('SDK 异常'); });
+    await expect(verifyWithCaptcha()).rejects.toThrow('SDK 异常');
+    expect(document.querySelector('[id^="ne-captcha-"]')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

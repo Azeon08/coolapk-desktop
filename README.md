@@ -7,11 +7,10 @@
 <p align="center">基于 Tauri 2、Vue 3 和 Rust 的非官方酷安桌面客户端。</p>
 
 <p align="center">
-  <a href="https://github.com/daimiaopeng/coolapk-desktop/actions/workflows/build.yml"><img src="https://github.com/daimiaopeng/coolapk-desktop/actions/workflows/build.yml/badge.svg" alt="构建状态"></a>
-  <a href="https://github.com/daimiaopeng/coolapk-desktop/releases"><img src="https://img.shields.io/github/v/release/daimiaopeng/coolapk-desktop?color=41b883" alt="最新版本"></a>
+  <a href="https://github.com/coolapk-desktop/coolapk-desktop/actions/workflows/build.yml"><img src="https://github.com/coolapk-desktop/coolapk-desktop/actions/workflows/build.yml/badge.svg" alt="构建状态"></a>
+  <a href="https://github.com/coolapk-desktop/coolapk-desktop/releases"><img src="https://img.shields.io/github/v/release/coolapk-desktop/coolapk-desktop?color=41b883" alt="最新版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT 许可证"></a>
   <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" alt="Tauri 2">
-  <a href="https://qm.qq.com/q/bAOWmjCfJ0"><img src="https://img.shields.io/badge/QQ群-1129528119-12B7F5?logo=tencentqq&logoColor=white" alt="QQ 交流群"></a>
 </p>
 
 > [!IMPORTANT]
@@ -19,7 +18,7 @@
 
 ## 📥 下载与安装
 
-请前往 [👉 GitHub Releases](https://github.com/daimiaopeng/coolapk-desktop/releases) 获取各平台的最新版本程序包：
+请前往 [👉 GitHub Releases](https://github.com/coolapk-desktop/coolapk-desktop/releases) 获取各平台的最新版本程序包：
 
 | 操作系统 | 文件格式 | 推荐安装包 |
 | :--- | :--- | :--- |
@@ -32,43 +31,27 @@
 
 > 💡 **提示**：构建产物均由 GitHub Actions 自动化流程在云端打包。Windows 单文件版无需解压或安装，系统需已有 WebView2 Runtime。iOS IPA 为未签名设备包，不能直接安装到普通 iPhone/iPad，需要使用 AltStore、SideStore、Sideloadly 或自己的 Apple 证书完成签名。
 
-## 💬 QQ 交流群
-
-点击链接加入群聊 **[【coolapk-desktop反馈群】](https://qm.qq.com/q/bAOWmjCfJ0)**，或扫码 / 搜索群号 **1129528119** 加入：
-
-<a href="https://qm.qq.com/q/bAOWmjCfJ0"><img src="docs/qq-group.png" width="260" alt="QQ 交流群二维码 (1129528119)"></a>
-
 ## 界面预览
 
 ![界面预览 1](docs/screenshots/首页.png)
 
-![界面预览 2](docs/screenshots/2.png)
-
-![界面预览 3](docs/screenshots/3.png)
-
-![界面预览 5](docs/screenshots/5.png)
-
-![界面预览 6](docs/screenshots/6.png)
-
-![界面预览 7](docs/screenshots/7.png)
-
 ## Star 走势
 
-<a href="https://star-history.com/#daimiaopeng/coolapk-desktop&Date">
+<a href="https://star-history.com/#coolapk-desktop/coolapk-desktop&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date" />
-   <img alt="Star 走势趋势图" src="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=coolapk-desktop/coolapk-desktop&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=coolapk-desktop/coolapk-desktop&type=Date" />
+   <img alt="Star 走势趋势图" src="https://api.star-history.com/svg?repos=coolapk-desktop/coolapk-desktop&type=Date" />
  </picture>
 </a>
 
 ## 贡献者
 
-[![贡献者](https://contrib.rocks/image?repo=daimiaopeng/coolapk-desktop)](https://github.com/daimiaopeng/coolapk-desktop/graphs/contributors)
+[![贡献者](https://contrib.rocks/image?repo=coolapk-desktop/coolapk-desktop)](https://github.com/coolapk-desktop/coolapk-desktop/graphs/contributors)
 
 ## 下载量统计图
 
-[![下载量统计图](https://release-monitor.com/chart/daimiaopeng/coolapk-desktop.svg?stable=5)](https://release-monitor.com/#/daimiaopeng/coolapk-desktop)
+[![下载量统计图](https://release-monitor.com/chart/coolapk-desktop/coolapk-desktop.svg?stable=5)](https://release-monitor.com/#/coolapk-desktop/coolapk-desktop)
 
 ## 功能
 
@@ -93,7 +76,7 @@
 - 客户端标识在每次启动时临时生成，不使用开发者或用户的固定设备指纹。
 - 应用会直接访问 `api.coolapk.com`、酷安图片/静态资源域名；不会向第三方字体或图标 CDN 发起请求。
 - 请勿在 Issue、日志或截图中提交真实 Cookie、私信和其他个人数据。
-- 一键私信反馈可取消勾选“附带脱敏诊断日志”。勾选时，最近最多 512 KB 的脱敏日志会以最高等级 DEFLATE 压缩为标准 ZIP，追加到 64×64 PNG 小图，避免此前大图触发的水印与重新编码。上传后会下载文件，逐字节验证与上传前一致，再在文字私信中发送图片链接。持有链接的人可读取附件；接收者可点击“查看诊断日志”，或在设置 → 诊断日志中粘贴私信链接、选择浏览器从该链接保存的 PNG，提取、复制或导出文本。新文件也可改为 .zip 后用解压软件打开。缩略图和截图无法提取附件。
+- 诊断日志默认保存在本机。反馈时可在“设置 → 诊断日志”检查并导出需要提供的内容，再自行决定是否将文件附加到 GitHub Issue；提交前请确认日志中不含账号凭据或个人信息。旧版客户端生成的诊断日志附件仍可在该页面读取。
 
 详见 [SECURITY.md](SECURITY.md)。
 
@@ -104,7 +87,7 @@
 - 各平台的 [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)
 
 ```bash
-git clone https://github.com/daimiaopeng/coolapk-desktop.git
+git clone https://github.com/coolapk-desktop/coolapk-desktop.git
 cd coolapk-desktop
 npm ci
 npm run tauri dev

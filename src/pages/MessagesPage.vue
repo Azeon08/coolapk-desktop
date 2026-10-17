@@ -96,15 +96,6 @@
         ref="chatAreaRef" 
         @scroll="handleChatScroll"
       >
-        <!-- 开发者反馈专属通道提示横幅 -->
-        <div v-if="isDeveloperSession" class="developer-feedback-banner">
-          <i class="fas fa-lightbulb banner-icon"></i>
-          <div class="banner-content">
-            <div class="banner-title">酷安桌面版 · 开发者反馈通道</div>
-            <div class="banner-desc">欢迎提出使用问题与功能建议。建议附带具体复现步骤或截图，开发者看到后会尽快跟进回复！</div>
-          </div>
-        </div>
-
         <div class="chat-status" v-if="loadingHistory">
           <LoadingState text="加载聊天记录..." />
         </div>
@@ -191,7 +182,7 @@
       </div>
       
       <div 
-        :class="['input-area', { 'is-fullscreen': isInputFullscreen, 'has-pending-images': pendingImages.length > 0, 'is-feedback-compose': isFeedbackCompose }]"
+        :class="['input-area', { 'is-fullscreen': isInputFullscreen, 'has-pending-images': pendingImages.length > 0 }]"
         :style="isInputFullscreen ? {} : { height: `${visibleInputHeight}px` }"
       >
         <!-- 顶部拖拽调整高度分割线 -->
@@ -271,11 +262,6 @@
           @dragover.prevent
         ></div>
         
-        <label v-if="isFeedbackCompose" class="feedback-log-option">
-          <input v-model="includeFeedbackLogs" type="checkbox" :disabled="sending || sendingImage" />
-          附带脱敏诊断日志（发送原图链接，持有链接的人可读取）
-        </label>
-        <div v-if="feedbackStage" class="feedback-log-option" role="status">{{ feedbackStage }}</div>
         <div class="input-bottom-bar">
           <div v-if="draftSaved" class="draft-status"><i class="far fa-save"></i> 草稿已自动保存</div>
           <div v-else class="draft-status-placeholder"></div>
@@ -346,8 +332,7 @@ import {
   isMessageSentByCurrentUser,
 } from '../utils/messageUnread';
 
-import { DEVELOPER_UID, DEVELOPER_USERNAME } from '../utils/feedback';
-import { DIAGNOSTIC_LINK_LABEL, getDiagnosticLink, uploadFeedbackDiagnosticImage } from '../utils/feedbackDiagnostics';
+import { getDiagnosticLink } from '../utils/feedbackDiagnostics';
 
 import { useRoute, useRouter } from 'vue-router';
 import { useAndroidBackButton } from '../utils/androidBackButton';
@@ -360,11 +345,6 @@ const notificationStore = useNotificationStore();
 const settingsStore = useSettingsStore();
 const showShortcutHints = useShortcutHints();
 const currentUserUid = computed(() => authStore.user?.uid || '');
-
-const isDeveloperSession = computed(() => {
-  const partnerUid = getSessionPartnerUid(currentSession.value);
-  return String(partnerUid || '') === DEVELOPER_UID;
-});
 
 const navigateToUser = (uid?: string | number) => {
   if (uid === undefined || uid === null || uid === '') return;
@@ -430,13 +410,6 @@ const inputText = ref('');
 const draftSaved = ref(false);
 const sending = ref(false);
 const sendingImage = ref(false);
-const includeFeedbackLogs = ref(true);
-const feedbackStage = ref('');
-const feedbackUpload = ref<{ owner: string; url: string } | null>(null);
-const feedbackSent = ref(false);
-const isFeedbackCompose = computed(() => !feedbackSent.value && route.query.feedback === '1'
-  && Boolean(currentSession.value)
-  && String(getSessionPartnerUid(currentSession.value)) === String(route.query.uid || ''));
 const followingPartner = ref(false);
 const confirmingFollow = ref(false);
 
@@ -687,9 +660,7 @@ function getStoredNumber(key: string, fallback: number, min: number, max: number
 
 const sidebarWidth = ref<number>(getStoredNumber('coolapk_messages_sidebar_width', DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
 const inputAreaHeight = ref<number>(getStoredNumber('coolapk_messages_input_height', DEFAULT_INPUT_HEIGHT, MIN_INPUT_HEIGHT, MAX_INPUT_HEIGHT));
-// 反馈的展开高度只是默认值；拖动后的高度独立保存，不覆盖普通私信的偏好。
-const feedbackInputHeight = ref<number | null>(null);
-const visibleInputHeight = computed(() => Math.max(pendingImages.value.length > 0 ? 240 : MIN_INPUT_HEIGHT, isFeedbackCompose.value ? feedbackInputHeight.value ?? Math.max(inputAreaHeight.value, Math.min(pendingImages.value.length > 0 ? 440 : 360, window.innerHeight * 0.7)) : inputAreaHeight.value));
+const visibleInputHeight = computed(() => Math.max(pendingImages.value.length > 0 ? 240 : MIN_INPUT_HEIGHT, inputAreaHeight.value));
 const isInputFullscreen = ref(false);
 
 function toggleInputFullscreen() {
@@ -785,8 +756,7 @@ function onMouseMoveInput(event: PointerEvent) {
   const maxAllowed = typeof window !== 'undefined' ? Math.floor(window.innerHeight * 0.8) : MAX_INPUT_HEIGHT;
   const minAllowed = pendingImages.value.length > 0 ? 240 : MIN_INPUT_HEIGHT;
   const newHeight = Math.max(minAllowed, Math.min(maxAllowed, startInputHeight + delta));
-  if (isFeedbackCompose.value) feedbackInputHeight.value = newHeight;
-  else inputAreaHeight.value = newHeight;
+  inputAreaHeight.value = newHeight;
 }
 
 function stopResizeInput() {
@@ -797,14 +767,12 @@ function stopResizeInput() {
   window.removeEventListener('pointermove', onMouseMoveInput);
   window.removeEventListener('pointerup', stopResizeInput);
   window.removeEventListener('pointercancel', stopResizeInput);
-  if (isFeedbackCompose.value) return;
   try {
     localStorage.setItem('coolapk_messages_input_height', String(inputAreaHeight.value));
   } catch {}
 }
 
 function resetInputHeight() {
-  if (isFeedbackCompose.value) { feedbackInputHeight.value = null; return; }
   inputAreaHeight.value = DEFAULT_INPUT_HEIGHT;
   try {
     localStorage.setItem('coolapk_messages_input_height', String(DEFAULT_INPUT_HEIGHT));
@@ -1559,10 +1527,10 @@ async function openTargetConversation(uid: string) {
     return;
   }
 
-  // 优先使用已知开发者昵称或路由传参，瞬时呈现真实名字，消除「酷友_xxxx」闪烁
+  // 优先使用路由传入的昵称，避免新会话名称先显示为默认占位符。
   const queryUsername = (route.query.username as string) || '';
   const queryAvatar = (route.query.avatar as string) || '';
-  const defaultUsername = (targetUid === DEVELOPER_UID ? DEVELOPER_USERNAME : queryUsername) || `酷友_${targetUid.slice(-4)}`;
+  const defaultUsername = queryUsername || `酷友_${targetUid.slice(-4)}`;
 
   const tempSession = {
     id: `new-${targetUid}`,
@@ -2025,9 +1993,7 @@ const sendTextMessage = async (text: string): Promise<boolean> => {
   }
 
   // 调用后台原生 API 发送
-  const sendRes = isFeedbackCompose.value
-    ? await CoolapkTauriAPI.sendPrivateMessage(String(targetUid), text, { retry: false })
-    : await CoolapkTauriAPI.sendPrivateMessage(String(targetUid), text);
+  const sendRes = await CoolapkTauriAPI.sendPrivateMessage(String(targetUid), text);
   const realMsg = Array.isArray(sendRes?.data) ? sendRes.data[0] : null;
 
   // 乐观更新 UI（与酷安 API 字段一致：uid=接收者，fromuid=发送者）
@@ -2086,18 +2052,6 @@ const sendMessage = async () => {
   sending.value = true;
   try {
     const owner = `${currentUserUid.value}:${getConversationKey()}`;
-    let feedbackText = text;
-    if (isFeedbackCompose.value && includeFeedbackLogs.value && text && !getDiagnosticLink(text)) {
-      if (feedbackUpload.value?.owner !== owner) {
-        feedbackStage.value = '正在打包、上传并校验诊断日志原图…';
-        const url = await uploadFeedbackDiagnosticImage();
-        feedbackUpload.value = { owner, url };
-      }
-      // Never send an account's report to a conversation selected while the upload was in flight.
-      if (`${currentUserUid.value}:${getConversationKey()}` !== owner) throw new Error('会话或账号已切换，日志未发送，请在目标会话重试');
-      feedbackText = `${text}\n\n- ${feedbackUpload.value.url.endsWith('.zip') ? '诊断日志附件：' : DIAGNOSTIC_LINK_LABEL}${feedbackUpload.value.url}\n- 日志读取：设置 → 诊断日志 → 读取日志附件，粘贴上方链接即可读取`;
-      feedbackStage.value = '日志上传完成，正在发送反馈…';
-    }
     // 1. 发送待发送列表中的所有图片
     while (pendingImages.value.length > 0) {
       const item = pendingImages.value[0];
@@ -2112,12 +2066,7 @@ const sendMessage = async () => {
     // 2. 发送文本消息
     if (text) {
       if (`${currentUserUid.value}:${getConversationKey()}` !== owner) throw new Error('会话或账号已切换，请在目标会话重试');
-      await sendTextMessage(feedbackText);
-      feedbackUpload.value = null;
-      if (isFeedbackCompose.value) {
-        // App keys pages by fullPath. Changing the query here would recreate the conversation.
-        feedbackSent.value = true;
-      }
+      await sendTextMessage(text);
     } else if (editorRef.value) {
       inputText.value = '';
       editorRef.value.innerHTML = '';
@@ -2129,7 +2078,6 @@ const sendMessage = async () => {
       : (err?.message || JSON.stringify(err) || '消息发送失败，请确认网络与账号权限状态');
     showToast(errMsg, 'error');
   } finally {
-    feedbackStage.value = '';
     sending.value = false;
   }
 };
@@ -3246,15 +3194,6 @@ onUnmounted(() => {
   margin: 0 1px;
 }
 
-.feedback-log-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 12px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  flex-shrink: 0;
-}
 .diagnostic-report-action {
   margin-top: 6px;
   padding: 6px 10px;
@@ -3264,57 +3203,6 @@ onUnmounted(() => {
   color: var(--text-primary);
   cursor: pointer;
 }
-.developer-feedback-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.04) 100%);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  border-radius: var(--radius-card, 12px);
-  margin-bottom: var(--space-3);
-  color: var(--text-primary);
-  animation: bannerFadeIn 0.25s ease-out;
-}
-
-@keyframes bannerFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.developer-feedback-banner .banner-icon {
-  font-size: 18px;
-  color: var(--brand-primary, #10b981);
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.developer-feedback-banner .banner-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.developer-feedback-banner .banner-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--brand-primary, #10b981);
-}
-
-.developer-feedback-banner .banner-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
 textarea::placeholder {
   color: var(--text-tertiary);
 }

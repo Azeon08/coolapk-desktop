@@ -58,11 +58,11 @@
       <h4 class="group-title">联系与支持</h4>
       <div class="setting-row">
         <div class="row-info">
-          <span class="row-label">一键私信反馈</span>
-          <span class="row-sub">直接向作者（oxygen的喵）私信反馈 Bug 或建议</span>
+          <span class="row-label">反馈与建议</span>
+          <span class="row-sub">在 GitHub Issues 提交问题或建议，自动预填客户端版本与系统</span>
         </div>
-        <AppButton variant="primary" size="sm" icon="fas fa-comment-dots" @click="handleFeedback">
-          私信反馈
+        <AppButton variant="primary" size="sm" icon="fas fa-bug" title="提交 GitHub Issue" @click="open(createFeedbackIssueUrl())">
+          提交反馈
         </AppButton>
       </div>
       <div class="setting-row">
@@ -70,42 +70,14 @@
           <span class="row-label">项目主页</span>
           <span class="row-sub">GitHub 仓库 · 源码与 Release</span>
         </div>
-        <AppIconButton icon="fas fa-arrow-up-right-from-square" size="sm" title="打开项目主页" @click="open('https://github.com/daimiaopeng/coolapk-desktop')" />
+        <AppIconButton icon="fas fa-arrow-up-right-from-square" size="sm" title="打开项目主页" @click="open('https://github.com/coolapk-desktop/coolapk-desktop')" />
       </div>
       <div class="setting-row">
         <div class="row-info">
-          <span class="row-label">GitHub 反馈</span>
-          <span class="row-sub">提交 Issue 或功能建议</span>
+          <span class="row-label">项目组织</span>
+          <span class="row-sub">coolapk-desktop · GitHub</span>
         </div>
-        <AppIconButton icon="fas fa-bug" size="sm" title="打开反馈页面" @click="open('https://github.com/daimiaopeng/coolapk-desktop/issues')" />
-      </div>
-      <div class="setting-row">
-        <div class="row-info">
-          <span class="row-label">联系作者</span>
-          <span class="row-sub">daimiaopeng · GitHub</span>
-        </div>
-        <AppIconButton icon="fas fa-user" size="sm" title="打开作者主页" @click="open('https://github.com/daimiaopeng')" />
-      </div>
-      <div class="setting-row">
-        <div class="row-info">
-          <span class="row-label">邮箱</span>
-          <span class="row-sub">daimiaopeng@gmail.com</span>
-        </div>
-        <AppIconButton icon="fas fa-envelope" size="sm" title="发送邮件" @click="open('mailto:daimiaopeng@gmail.com')" />
-      </div>
-      <div class="setting-row">
-        <div class="row-info">
-          <span class="row-label">酷安主页</span>
-          <span class="row-sub">oxygen的喵 · 酷友交流</span>
-        </div>
-        <AppIconButton icon="fas fa-smile" size="sm" title="打开酷安主页" @click="open('https://www.coolapk.com/u/oxygen%E7%9A%84%E5%96%B5')" />
-      </div>
-      <div class="setting-row">
-        <div class="row-info">
-          <span class="row-label">QQ 交流群</span>
-          <span class="row-sub">1129528119</span>
-        </div>
-        <AppIconButton icon="fab fa-qq" size="sm" title="加入 QQ 交流群" @click="open('https://qm.qq.com/q/bAOWmjCfJ0')" />
+        <AppIconButton icon="fas fa-users" size="sm" title="打开项目组织主页" @click="open('https://github.com/coolapk-desktop')" />
       </div>
     </div>
 
@@ -115,35 +87,27 @@
       <div class="guide-content">
         <p class="guide-item"><strong>📌 支持反馈内容：</strong>功能异常/报错（Bug）、界面样式显示问题、交互体验优化建议、希望新增的专区或功能。</p>
         <p class="guide-item"><strong>💡 高效反馈技巧：</strong>建议附带<strong>具体操作步骤</strong>、<strong>复现条件</strong>或<strong>截图/报错信息</strong>，以便开发者快速定位并排查问题。</p>
-        <p class="guide-item"><strong>⚡ 自动附加信息：</strong>通过一键反馈跳转时，会自动预填当前客户端版本号与系统类型，无需手动输入。</p>
-        <p class="guide-item"><strong>📄 诊断日志：</strong>反馈会话可附带脱敏日志的原图链接，可取消勾选。发送前会上传到酷安，持有链接的人可读取；接收者可在“诊断日志”页面输入链接提取文本。</p>
+        <p class="guide-item"><strong>⚡ 自动附加信息：</strong>点击提交反馈后会打开 GitHub Issues，并预填当前客户端版本号与系统类型。</p>
+        <p class="guide-item"><strong>📄 诊断日志：</strong>日志默认保存在本机。需要提供时，请先在“诊断日志”页面检查并导出，再自行决定是否附加到 Issue；提交前请移除账号凭据和个人信息。</p>
       </div>
     </div>
 
-    <p class="copyright">© 2026 daimiaopeng · MIT License</p>
+    <p class="copyright">© 2026 coolapk-desktop · MIT License</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { APP_VERSION } from '../../constants/version';
 import { CoolapkTauriAPI } from '../../api/coolapk';
 import { useSettingsStore } from '../../stores/settings';
-import { useAuthStore } from '../../stores/auth';
 import AppButton from '../../components/common/AppButton.vue';
 import AppIconButton from '../../components/common/AppIconButton.vue';
-import { openFeedbackMessage } from '../../utils/feedback';
+import { createFeedbackIssueUrl } from '../../utils/feedback';
 
-const router = useRouter();
-const authStore = useAuthStore();
 const appVersion = APP_VERSION;
 const buildCommit = (import.meta.env.VITE_BUILD_COMMIT || '').slice(0, 8);
 const settingsStore = useSettingsStore();
-
-function handleFeedback() {
-  openFeedbackMessage(router, authStore);
-}
 
 // 安装版本与更新渠道独立，测试版用户也可以选择只接收稳定版更新。
 const channelLabel = computed(() => `${appVersion.includes('-') ? '测试版' : '稳定版'} · ${settingsStore.settings.updateChannel === 'beta' ? '测试版更新渠道' : '稳定版更新渠道'}`);
@@ -167,7 +131,7 @@ function checkUpdate() {
 }
 
 onMounted(() => {
-  fetch('https://api.github.com/repos/daimiaopeng/coolapk-desktop', {
+  fetch('https://api.github.com/repos/coolapk-desktop/coolapk-desktop', {
     headers: { Accept: 'application/vnd.github.v3+json' },
   })
     .then((res) => (res.ok ? res.json() : null))

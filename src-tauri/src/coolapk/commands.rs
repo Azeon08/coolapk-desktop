@@ -1115,16 +1115,20 @@ pub async fn get_feed_replies(
     last_item: Option<String>,
     list_type: Option<String>,
     from_feed_author: Option<u32>,
+    post_token: Option<String>,
+    post_token_field: Option<String>,
 ) -> Result<Value, String> {
     state
         .client
-        .get_feed_replies_paged(
+        .get_feed_replies_with_captcha(
             &feed_id,
             page,
             first_item.as_deref().unwrap_or(""),
             last_item.as_deref().unwrap_or(""),
             list_type.as_deref().unwrap_or("lastupdate_desc"),
             from_feed_author.unwrap_or(0),
+            post_token.as_deref(),
+            post_token_field.as_deref(),
         )
         .await
 }
@@ -1136,14 +1140,18 @@ pub async fn get_sub_replies(
     reply_id: String,
     page: u32,
     last_item: Option<String>,
+    post_token: Option<String>,
+    post_token_field: Option<String>,
 ) -> Result<Value, String> {
     state
         .client
-        .get_sub_replies_paged(
+        .get_sub_replies_with_captcha(
             &feed_id,
             &reply_id,
             page,
             last_item.as_deref().unwrap_or(""),
+            post_token.as_deref(),
+            post_token_field.as_deref(),
         )
         .await
 }

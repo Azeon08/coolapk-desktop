@@ -10,8 +10,6 @@ import { initializeAndroidSafeArea } from './utils/androidSafeArea';
 import { router } from './router';
 import { CoolapkTauriAPI } from './api/coolapk';
 import { useSettingsStore } from './stores/settings';
-import { useAuthStore } from './stores/auth';
-import { setupAccountDeviceSync } from './utils/accountDeviceSync';
 import { setupGlobalAlertProxy } from './utils/toast';
 import { normalizeCoolapkDeepLink } from './utils/coolapkRoute';
 import { installDiagnosticLogging, logDiagnostic, logDiagnosticLimited, summarizeDiagnosticError } from './utils/diagnosticLogger';
@@ -145,7 +143,6 @@ async function setupDeepLinkHandling() {
 async function bootstrap() {
   await initializeAndroidSafeArea();
   await settingsStore.initializeSettings();
-  setupAccountDeviceSync(useAuthStore(), settingsStore, CoolapkTauriAPI);
   logDiagnostic('info', 'app', 'settings-ready');
   app.mount('#app');
   // 设置文件在应用挂载前读取；缩放等依赖 #app 的外观设置需在挂载后再应用一次。

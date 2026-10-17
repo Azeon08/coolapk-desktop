@@ -250,6 +250,8 @@ pub struct CoolapkClient {
     device_profile: RwLock<DeviceProfile>,
     native_device_profile: DeviceProfile,
     device_code: RwLock<String>,
+    /// 服务端验证码凭证独立于登录态，仅在再次验证成功时替换。
+    captcha_validation: RwLock<Option<String>>,
 }
 
 pub struct ProxiedVideoResponse {
@@ -1090,6 +1092,7 @@ impl CoolapkClient {
             device_profile: RwLock::new(DeviceProfile::default()),
             native_device_profile,
             device_code: RwLock::new(device_code),
+            captcha_validation: RwLock::new(None),
         }
     }
 
@@ -1359,6 +1362,11 @@ impl CoolapkClient {
         if let Some(ap) = accounts_path {
             if let Ok(content) = std::fs::read_to_string(&ap) {
                 if let Ok(root) = serde_json::from_str::<Value>(&content) {
+                    if let Some(validation) = root.get("captchaValidation").and_then(Value::as_str).filter(|value| !value.trim().is_empty()) {
+                        if let Ok(mut stored) = self.captcha_validation.write() {
+                            *stored = Some(validation.to_string());
+                        }
+                    }
                     let last_uid = root
                         .get("lastLoginUid")
                         .and_then(|v| v.as_str())
@@ -1745,10 +1753,36 @@ impl CoolapkClient {
         query: &[(&str, String)],
         form: Option<&[(&str, String)]>,
     ) -> Result<Value, String> {
+        self.request_api_from_with_validation(api_origin, method, path, query, form, None).await
+    }
+
+    fn validation_for_request(&self, validation: Option<&str>) -> Result<Option<String>, String> {
+        let mut stored = self.captcha_validation.write().map_err(|_| "无法读取验证码凭证".to_string())?;
+        if let Some(validation) = validation.filter(|value| !value.trim().is_empty()) {
+            if stored.as_deref() != Some(validation) {
+                *stored = Some(validation.to_string());
+                let mut root = self.load_accounts_root();
+                root["captchaValidation"] = json!(validation);
+                self.save_accounts_root(&root);
+            }
+        }
+        Ok(stored.clone())
+    }
+
+    async fn request_api_from_with_validation(
+        &self,
+        api_origin: &str,
+        method: Method,
+        path: &str,
+        query: &[(&str, String)],
+        form: Option<&[(&str, String)]>,
+        validation: Option<&str>,
+    ) -> Result<Value, String> {
         // 该方法只供内部固定 API 主机调用，禁止把登录凭据发送到其他域名。
         if api_origin != "https://api.coolapk.com" && api_origin != "https://api2.coolapk.com" {
             return Err("不受信任的酷安 API 主机".to_string());
         }
+        let validation = self.validation_for_request(validation)?;
         let started = std::time::Instant::now();
         let log_path = path.split('?').next().unwrap_or(path);
         let method_name = method.as_str().to_string();
@@ -1769,8 +1803,9 @@ impl CoolapkClient {
             .map_err(|_| "failed to read login state".to_string())?
             .clone();
         let mut cookie_attached = false;
-        if let Some(cookie) = cookie {
-            let full_cookie = self.cookie_for_path(&cookie, path);
+        if cookie.is_some() || validation.is_some() {
+            let full_cookie = self.cookie_for_path(cookie.as_deref().unwrap_or(""), path);
+            let full_cookie = cookie_with_captcha_validation(&full_cookie, validation.as_deref());
             if let Ok(header_val) = reqwest::header::HeaderValue::from_str(&full_cookie) {
                 request = request.header(COOKIE, header_val);
                 cookie_attached = true;
@@ -3186,10 +3221,22 @@ impl CoolapkClient {
     /// 公共请求层，使登录 Cookie、游客设备码和设备请求头与一级评论保持一致。
     pub async fn get_sub_replies_paged(
         &self,
+        feed_id: &str,
+        reply_id: &str,
+        page: u32,
+        last_item: &str,
+    ) -> Result<Value, String> {
+        self.get_sub_replies_with_captcha(feed_id, reply_id, page, last_item, None, None).await
+    }
+
+    pub async fn get_sub_replies_with_captcha(
+        &self,
         _feed_id: &str,
         reply_id: &str,
         page: u32,
         last_item: &str,
+        post_token: Option<&str>,
+        post_token_field: Option<&str>,
     ) -> Result<Value, String> {
         let target_reply_id = reply_id.trim();
         if target_reply_id.is_empty() {
@@ -3209,12 +3256,10 @@ impl CoolapkClient {
             query.push(("lastItem", last_item.trim().to_string()));
         }
 
-        let raw = self.api_get("/v6/feed/replyList", &query).await?;
-        let normalized = wrap_api_data(raw)?;
-        let data_arr = normalized
-            .get("data")
-            .and_then(Value::as_array)
-            .ok_or_else(|| "酷安返回的楼中楼数据格式不正确".to_string())?;
+        append_comment_captcha_token(&mut query, post_token, post_token_field);
+        let validation = post_token.filter(|_| post_token_field.is_some_and(|field| field.trim().is_empty()));
+        let raw = self.request_api_from_with_validation("https://api.coolapk.com", Method::GET, "/v6/feed/replyList", &query, None, validation).await?;
+        let data_arr = comment_list_data(raw)?;
 
         let mut cleaned_replies = Vec::new();
         for r in data_arr {
@@ -3348,6 +3393,20 @@ impl CoolapkClient {
         list_type: &str,
         from_feed_author: u32,
     ) -> Result<Value, String> {
+        self.get_feed_replies_with_captcha(feed_id, page, first_item, last_item, list_type, from_feed_author, None, None).await
+    }
+
+    pub async fn get_feed_replies_with_captcha(
+        &self,
+        feed_id: &str,
+        page: u32,
+        first_item: &str,
+        last_item: &str,
+        list_type: &str,
+        from_feed_author: u32,
+        post_token: Option<&str>,
+        post_token_field: Option<&str>,
+    ) -> Result<Value, String> {
         let requested_list_type = list_type.trim();
         if !requested_list_type.is_empty()
             && !matches!(
@@ -3385,10 +3444,13 @@ impl CoolapkClient {
             ("blockStatus", "0".to_string()),
             ("fromFeedAuthor", from_feed_author.to_string()),
         ]);
-        let raw = self.api_get("/v6/feed/replyList", &query).await?;
+        append_comment_captcha_token(&mut query, post_token, post_token_field);
+        let validation = post_token.filter(|_| post_token_field.is_some_and(|field| field.trim().is_empty()));
+        let raw = self.request_api_from_with_validation("https://api.coolapk.com", Method::GET, "/v6/feed/replyList", &query, None, validation).await?;
+        let data_arr = comment_list_data(raw)?;
 
         let mut cleaned_replies = Vec::new();
-        if let Some(data_arr) = raw.get("data").and_then(|v| v.as_array()) {
+        {
             for r in data_arr {
                 if let Some(obj) = r.as_object() {
                     let reply_id = obj
@@ -3977,11 +4039,10 @@ impl CoolapkClient {
     pub async fn get_feed_detail(&self, feed_id: &str, post_token: Option<&str>, post_token_field: Option<&str>) -> Result<Value, String> {
         let mut query = vec![("id", feed_id.to_string())];
         if let Some(token) = post_token.filter(|value| !value.trim().is_empty()) {
-            // 验证令牌使用服务端指定的安全字段名，缺省时使用酷安标准字段。
-            let field = post_token_field.filter(|value| value.starts_with('_') && value.len() <= 64 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')).unwrap_or("_v2_post_token");
-            query.push((field, token.to_string()));
+            append_comment_captcha_token(&mut query, Some(token), post_token_field);
         }
-        let primary_error = match self.api_get("/v6/feed/detail", &query).await {
+        let validation = post_token.filter(|_| post_token_field.is_some_and(|field| field.trim().is_empty()));
+        let primary_error = match self.request_api_from_with_validation("https://api.coolapk.com", Method::GET, "/v6/feed/detail", &query, None, validation).await {
             Ok(value) if matches!(application_failure(&value), Some((403, "captcha"))) => return Err(value.to_string()),
             Ok(value) => match wrap_api_data(value) {
                 Ok(detail) => return Ok(detail),
@@ -9034,6 +9095,44 @@ fn rank_feed_url(rank_type: &str) -> Option<&'static str> {
         "index" => Some("#/feed/statList?statType=7days&sortField=detailnum"),
         _ => None,
     }
+}
+
+// 评论失败必须保留验证码配置，不能把缺少 data 的错误响应转换成空列表。
+fn comment_list_data(response: Value) -> Result<Vec<Value>, String> {
+    if application_failure(&response).is_some()
+        || response.get("messageStatus").and_then(Value::as_str).is_some_and(|status| status.starts_with("err_"))
+    {
+        if matches!(application_failure(&response), Some((_, "captcha")))
+            || response.get("messageStatus").and_then(Value::as_str).is_some_and(|status| status.contains("captcha"))
+        {
+            return Err(response.to_string());
+        }
+        return Err(response.get("message").and_then(Value::as_str).unwrap_or("酷安拒绝了评论请求，请稍后重试").to_string());
+    }
+    let normalized = wrap_api_data(response)?;
+    normalized.get("data").and_then(Value::as_array).cloned()
+        .ok_or_else(|| "酷安返回的评论数据格式不正确".to_string())
+}
+
+fn append_comment_captcha_token<'a>(query: &mut Vec<(&'a str, String)>, token: Option<&str>, field: Option<&'a str>) {
+    // APK：captchaField 为空时使用 validate Cookie，不添加查询字段。
+    if field.is_some_and(|value| value.trim().is_empty()) { return; }
+    if let Some(token) = token.filter(|value| !value.trim().is_empty()) {
+        let field = field.filter(|value| value.starts_with('_') && value.len() <= 64 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+            .unwrap_or("_v2_post_token");
+        query.push((field, token.to_string()));
+    }
+}
+
+fn cookie_with_captcha_validation(cookie: &str, token: Option<&str>) -> String {
+    let Some(token) = token.filter(|value| !value.trim().is_empty()) else { return cookie.to_string(); };
+    // 与 Android URLEncoder 一致地编码凭证，不输出到日志。
+    let mut encoded = reqwest::Url::parse("https://api.coolapk.com").expect("static API URL");
+    encoded.query_pairs_mut().append_pair("validate", token);
+    let mut cookies: Vec<&str> = cookie.split(';').map(str::trim).filter(|value| !value.is_empty()
+        && value.split_once('=').is_none_or(|(name, _)| name.trim() != "validate")).collect();
+    cookies.push(encoded.query().unwrap_or_default());
+    cookies.join("; ")
 }
 
 fn wrap_api_data(response: Value) -> Result<Value, String> {

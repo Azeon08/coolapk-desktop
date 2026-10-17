@@ -13,6 +13,7 @@
 
 /* src/styles/themes.css - 浅色/深色主题定义 */
 :root {
+  color-scheme: light;
   --brand-primary: #10b768;
   --brand-hover: #079e58;
   --brand-active: #05844b;
@@ -48,6 +49,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --titlebar-divider: rgba(255, 255, 255, 0.07);
   --window-control-hover: rgba(255, 255, 255, 0.08);
   --window-control-active: rgba(255, 255, 255, 0.13);

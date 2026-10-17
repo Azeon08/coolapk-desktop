@@ -3,7 +3,6 @@ import { ref, watch, onScopeDispose } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { resolveDeviceIdentity } from '../utils/devicePresets';
-import type { AccountDeviceProfile } from '../utils/accountDevice';
 import { resolveDesktopCommentsOnRight } from '../utils/desktopCommentsPreference';
 import { normalizeSearchTabOrder } from '../utils/searchTabOrder';
 import { normalizeLightBackground, buildLightBackground } from '../utils/lightBackground';
@@ -406,8 +405,6 @@ const ACCENT_PALETTES: Record<AccentColor, { light: AccentPalette; dark: AccentP
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(cloneDefaultSettings());
-  // 自动识别结果只属于当前账号的运行态，不写入全局手动指纹设置。
-  const automaticDeviceProfile = ref<AccountDeviceProfile | null>(null);
   const resolvedTheme = ref<'dark' | 'light'>('light');
   const linuxSystemTheme = ref<SystemTheme>(null);
   const androidProfileBackground = ref(false);
@@ -783,15 +780,7 @@ export const useSettingsStore = defineStore('settings', () => {
                 build: f.build.trim() || undefined,
                 ...resolveDeviceIdentity(f),
               }
-            : automaticDeviceProfile.value ? {
-                manufacturer: automaticDeviceProfile.value.manufacturer,
-                brand: automaticDeviceProfile.value.brand,
-                model: automaticDeviceProfile.value.model,
-                build: automaticDeviceProfile.value.build,
-                // 仅复用设备与系统信息，酷安版本保持与本客户端请求头一致，并标记本客户端发布的记录。
-                userAgent: `${automaticDeviceProfile.value.userAgent.replace(/\+CoolMarket\/\S+/, `+CoolMarket/${defaultDeviceFingerprint.appVersion}-${defaultDeviceFingerprint.appCode}-universal`)}${automaticDeviceProfile.value.source === 'history' ? ' CoolapkDesktopAuto' : ''}`,
-                ...(automaticDeviceProfile.value.sdkInt ? { sdkInt: automaticDeviceProfile.value.sdkInt } : {}),
-              } : {}),
+            : {}),
           deviceId,
         },
       });
@@ -800,11 +789,6 @@ export const useSettingsStore = defineStore('settings', () => {
       console.warn('同步设备信息设置失败:', err);
       return false;
     }
-  }
-
-  async function setAutomaticDeviceProfile(profile: AccountDeviceProfile | null): Promise<void> {
-    automaticDeviceProfile.value = profile;
-    await syncDeviceProfile(settings.value);
   }
 
   async function syncNativeSettings(s: AppSettings) {
@@ -895,8 +879,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     settings,
-    automaticDeviceProfile,
-    setAutomaticDeviceProfile,
     resolvedTheme,
     profileToolbarCompact,
     setAndroidProfileBackground,

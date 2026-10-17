@@ -1,8 +1,13 @@
-import type { Router } from 'vue-router';
 import { APP_VERSION } from '../constants/version';
 
-export const DEVELOPER_UID = '1451266';
-export const DEVELOPER_USERNAME = 'oxygen的喵';
+export const GITHUB_ISSUES_URL = 'https://github.com/coolapk-desktop/coolapk-desktop/issues';
+
+export function createFeedbackIssueUrl(): string {
+  const url = new URL(`${GITHUB_ISSUES_URL}/new`);
+  url.searchParams.set('title', `酷安客户端问题反馈 v${APP_VERSION}`);
+  url.searchParams.set('body', getFeedbackTemplate());
+  return url.toString();
+}
 
 export function getFeedbackTemplate(): string {
   let osName = 'Windows';
@@ -29,28 +34,4 @@ export function getFeedbackTemplate(): string {
 - 操作系统：${osName}
 - 问题描述：
 - 复现步骤：`;
-}
-
-export function openFeedbackMessage(
-  router: Router,
-  authStore?: { isLoggedIn: boolean; openLoginModal?: () => void },
-) {
-  if (authStore && !authStore.isLoggedIn) {
-    if (typeof authStore.openLoginModal === 'function') {
-      authStore.openLoginModal();
-    }
-    return;
-  }
-
-  const initialText = getFeedbackTemplate();
-  void router.push({
-    path: '/messages',
-    query: {
-      uid: DEVELOPER_UID,
-      username: DEVELOPER_USERNAME,
-      initialText,
-      feedback: '1',
-      open: String(Date.now()),
-    },
-  });
 }

@@ -1,29 +1,6 @@
 import { htmlToPlainText } from './htmlText';
-import { invoke } from '@tauri-apps/api/core';
 import { CoolapkTauriAPI } from '../api/coolapk';
-import { APP_VERSION } from '../constants/version';
-import { getFeedbackTemplate } from './feedback';
-import { redactDiagnosticText } from './diagnosticLogger';
-import { MAX_DIAGNOSTIC_IMAGE_BYTES, MAX_DIAGNOSTIC_LOG_BYTES, packDiagnosticImage, packDiagnosticZip, unpackDiagnosticImage, formatDiagnosticTime } from './diagnosticImage';
-
-export const DIAGNOSTIC_LINK_LABEL = '诊断日志图片：';
-
-export function sanitizeFeedbackLogs(content: string): string {
-  const lines = content.split(/\r?\n/).filter(line => !/heartbeat uptime_s=/.test(line)).slice(-3000);
-  const safe = lines.map(line => {
-    // A Cookie header may contain multiple secrets; remove the complete line rather than only its first value.
-    if (/\b(?:cookie|authorization|set-cookie|SESSID|ddid|(?:_v2_)?post_token|access_token|access_key_id|access_key_secret|security_token|client_secret|device_id|deviceCode|oaid|imei|imsi|idfa)["']?\s*[=:]/i.test(line)) return '[已移除凭据所在日志行]';
-    return redactDiagnosticText(line)
-      .replace(/\b(?:message|content|body|text|response|request_body|response_body)["']?\s*[=:].*/gi, '[已移除正文]')
-      .replace(/\/data\/(?:user\/\d+|data)\/[^/\s]+/g, '[app-dir]');
-  }).join('\n').trim();
-  // Keep the recent end without splitting UTF-8 characters.
-  const bytes = new TextEncoder().encode(safe);
-  if (bytes.length <= MAX_DIAGNOSTIC_LOG_BYTES) return safe;
-  let start = bytes.length - MAX_DIAGNOSTIC_LOG_BYTES;
-  while ((bytes[start]! & 0xc0) === 0x80) start++;
-  return new TextDecoder().decode(bytes.subarray(start));
-}
+import { MAX_DIAGNOSTIC_IMAGE_BYTES, unpackDiagnosticImage } from './diagnosticImage';
 
 export function normalizeDiagnosticImageUrl(value: string): string {
   const url = new URL(value.trim());
@@ -39,63 +16,6 @@ export function getDiagnosticLink(text: string): string {
   const value = htmlToPlainText(text).match(/诊断日志(?:图片|附件)：\s*(https?:\/\/[^\s<>"']+)/)?.[1];
   if (!value) return '';
   try { return normalizeDiagnosticImageUrl(value); } catch { return ''; }
-}
-
-async function createCover(createdAt: string): Promise<Uint8Array> {
-  const canvas = document.createElement('canvas');
-  // A small carrier avoids the watermark/re-encoding observed on larger feed images.
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('无法生成日志图片，请取消附带日志后发送，或导出日志');
-  context.fillStyle = '#f1f8f5';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#087c4b';
-  context.textAlign = 'center';
-  context.font = 'bold 20px sans-serif';
-  context.fillText('日志', 32, 24);
-  context.font = '10px sans-serif';
-  context.fillText(formatDiagnosticTime(createdAt).slice(11, 16), 32, 41);
-  context.font = '9px sans-serif';
-  context.fillText('北京时间', 32, 55);
-  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('生成日志图片失败')), 'image/png'));
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-export async function createFeedbackDiagnosticImage(): Promise<Uint8Array> {
-  const snapshot = await invoke<{ content: string }>('get_diagnostic_logs');
-  const log = sanitizeFeedbackLogs(snapshot.content || '');
-  if (!log) throw new Error('暂无可附带的日志，请取消附带日志后发送');
-  const createdAt = new Date().toISOString();
-  const report = {
-    version: APP_VERSION,
-    platform: getFeedbackTemplate().match(/操作系统：([^\n]+)/)?.[1] || '未知',
-    createdAt,
-    log,
-  };
-  return packDiagnosticImage(await createCover(createdAt), report);
-}
-
-export async function uploadFeedbackDiagnosticImage(): Promise<string> {
-  const bytes = await createFeedbackDiagnosticImage();
-  const expected = unpackDiagnosticImage(bytes);
-  async function uploadAndVerify(payload: Uint8Array, extension: 'png' | 'zip'): Promise<string> {
-    const response = await CoolapkTauriAPI.uploadImage(payload, `coolapk-diagnostics-${Date.now()}.${extension}`, extension === 'png' ? 'image/png' : 'application/zip', 'feed');
-    const data = response?.data ?? response;
-    const url = typeof data === 'string' ? data : data?.url;
-    if (!url) throw new Error('日志已上传，但未取得附件地址');
-    const originalUrl = normalizeDiagnosticImageUrl(url);
-    const actual = unpackDiagnosticImage(await downloadDiagnosticImage(originalUrl));
-    // 图片编码可以变化，但报告元数据和脱敏日志必须完整一致。
-    if (actual.version !== expected.version || actual.platform !== expected.platform || actual.createdAt !== expected.createdAt || actual.log !== expected.log) throw new Error('上传后的日志附件内容不一致');
-    return originalUrl;
-  }
-  try { return await uploadAndVerify(bytes, 'png'); }
-  catch {
-    // 使用同一次脱敏快照生成独立 ZIP，避免 PNG 尾部数据被服务端清除。
-    try { return await uploadAndVerify(packDiagnosticZip(expected), 'zip'); }
-    catch (cause) { throw new Error(`PNG 和 ZIP 日志上传未能完成校验，请重试或导出日志：${String(cause)}`); }
-  }
 }
 
 async function downloadDiagnosticImage(value: string): Promise<Uint8Array> {

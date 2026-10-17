@@ -7,6 +7,7 @@ const routerMock = vi.hoisted(() => ({
   replace: vi.fn(),
   currentRoute: { value: { path: '/' } },
 }));
+const apiMock = vi.hoisted(() => ({ openUrl: vi.fn() }));
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>();
@@ -16,6 +17,8 @@ vi.mock('vue-router', async (importOriginal) => {
     useRouter: () => routerMock,
   };
 });
+
+vi.mock('../../../api/coolapk', () => ({ CoolapkTauriAPI: apiMock }));
 
 import MainSidebar from '../MainSidebar.vue';
 import { useSettingsStore } from '../../../stores/settings';
@@ -85,6 +88,12 @@ describe('MainSidebar', () => {
     const feedbackButton = wrapper.find('.feedback-btn');
     expect(feedbackButton.exists()).toBe(true);
     expect(feedbackButton.text()).toContain('反馈');
+    await feedbackButton.trigger('click');
+    const [issueUrl, target] = apiMock.openUrl.mock.calls[0]!;
+    const issue = new URL(String(issueUrl));
+    expect(`${issue.origin}${issue.pathname}`).toBe('https://github.com/coolapk-desktop/coolapk-desktop/issues/new');
+    expect(issue.searchParams.get('body')).toContain('客户端版本：');
+    expect(target).toBe('system');
 
     const updateButton = wrapper.find('.check-update-btn');
     expect(updateButton.exists()).toBe(true);

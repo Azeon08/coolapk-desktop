@@ -1,13 +1,12 @@
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse, compileStyle } from '@vue/compiler-sfc';
 
 // 真实浏览器校验私信输入区的空间分配和 CSP；单元测试环境无法判断裁切或图片解码。
-const baseline = process.argv.includes('--baseline');
-const source = path => baseline ? execFileSync('git', ['show', `HEAD:${path}`], { encoding: 'utf8' }) : readFileSync(path, 'utf8');
+const source = path => readFileSync(path, 'utf8');
 const descriptor = parse(source('src/pages/MessagesPage.vue')).descriptor;
 const css = readFileSync('src/styles/tokens.css', 'utf8') + descriptor.styles.map(style => compileStyle({ source: style.content, filename: 'MessagesPage.vue', id: 'composer', scoped: false }).code).join('\n');
 const imagePolicy = JSON.parse(source('src-tauri/tauri.conf.json')).app.security.csp.split(';').find(rule => rule.trim().startsWith('img-src')).trim();
@@ -21,24 +20,17 @@ const cases = [
   { width: 1280, height: 600, images: 1, fullscreen: true, inputHeight: 160 },
   { width: 390, height: 400, images: 0, fullscreen: false, inputHeight: 160 },
   { width: 1280, height: 600, images: 1, fullscreen: false, inputHeight: 400 },
-  { width: 390, height: 600, images: 0, fullscreen: false, inputHeight: 360, feedback: true },
-  { width: 1280, height: 600, images: 0, fullscreen: false, inputHeight: 360, feedback: true },
-  { width: 390, height: 600, images: 1, fullscreen: false, inputHeight: 440, feedback: true },
-  { width: 390, height: 400, images: 0, fullscreen: false, inputHeight: 280, feedback: true },
-  { width: 390, height: 600, images: 0, fullscreen: false, inputHeight: 200, feedback: true, resized: true },
 ];
 const frames = cases.map((test, index) => {
   const imageClass = test.images && descriptor.template.content.includes('has-pending-images') ? ' has-pending-images' : '';
-  const feedbackClass = test.feedback && descriptor.template.content.includes('is-feedback-compose') ? ' is-feedback-compose' : '';
   const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${imagePolicy}"><style>${css}
     html,body{margin:0;height:100%;} .messages-page{border-radius:0;} .chat-area{min-height:0;opacity:1;}
     .messages-main{display:flex!important;} .input-actions button{height:32px;width:64px;}
     </style></head><body><div class="messages-page"><div class="messages-main"><div class="chat-area">聊天记录</div>
-    <div class="input-area${imageClass}${feedbackClass}${test.fullscreen ? ' is-fullscreen' : ''}" style="height:${test.inputHeight}px">
+    <div class="input-area${imageClass}${test.fullscreen ? ' is-fullscreen' : ''}" style="height:${test.inputHeight}px">
     <div class="input-toolbar"><span>表情 图片</span><button>全屏</button></div>
     ${test.images ? '<div class="pending-images-bar">' + Array.from({ length: test.images }, () => '<div class="pending-image-card"><img class="pending-image-thumb" alt="待发送图片"></div>').join('') + '</div>' : ''}
-    <div class="message-rich-editor" contenteditable="true">${test.feedback ? '【酷安客户端问题反馈】<br>- 客户端版本：v1.34.1<br>- 操作系统：Windows<br>- 问题描述：<br>- 复现步骤：' : '输入内容<br>'.repeat(30)}</div>
-    ${test.feedback ? '<label class="feedback-log-option"><input type="checkbox" checked>附带脱敏诊断日志（发送原图链接，持有链接的人可读取）</label>' : ''}
+    <div class="message-rich-editor" contenteditable="true">${'输入内容<br>'.repeat(30)}</div>
     <div class="input-bottom-bar"><div class="draft-status-placeholder"></div><div class="input-actions"><button>发送</button></div></div>
     </div></div></div><script>
     (async()=>{
@@ -50,9 +42,7 @@ const frames = cases.map((test, index) => {
         const area=document.querySelector('.input-area').getBoundingClientRect();
         const send=document.querySelector('.input-actions button').getBoundingClientRect();
         const editor=document.querySelector('.message-rich-editor').getBoundingClientRect();
-        const editorEl=document.querySelector('.message-rich-editor');
-        const templateFits=${!test.feedback || test.height < 600 || Boolean(test.resized)}||editorEl.scrollHeight<=editorEl.clientHeight+1;
-        const result={index:${index},imagesLoaded:images.every(img=>img.naturalWidth>0),sendVisible:send.top>=area.top&&send.bottom<=Math.min(area.bottom,innerHeight)+1,editorVisible:editor.height>=20,templateFits,areaHeight:area.height};
+        const result={index:${index},imagesLoaded:images.every(img=>img.naturalWidth>0),sendVisible:send.top>=area.top&&send.bottom<=Math.min(area.bottom,innerHeight)+1,editorVisible:editor.height>=20,areaHeight:area.height};
         parent.postMessage(result,'*');URL.revokeObjectURL(url);
       });
     })();</script></body></html>`;
@@ -65,6 +55,6 @@ if (result.error) throw result.error;
 const encoded = result.stdout.match(/data-results="([^"]+)"/)?.[1];
 if (!encoded) throw new Error(`浏览器未返回结果：${result.stderr.slice(-600)}`);
 const checks = JSON.parse(decodeURIComponent(encoded)).sort((a, b) => a.index - b.index);
-console.log(JSON.stringify({ baseline, checks, artifacts }, null, 2));
-const passed = checks.length === cases.length && checks.every(check => check.imagesLoaded && check.sendVisible && check.editorVisible && check.templateFits);
-if (baseline ? passed : !passed) throw new Error(baseline ? '基线未复现问题' : '私信图片预览或输入区布局验证失败');
+console.log(JSON.stringify({ checks, artifacts }, null, 2));
+const passed = checks.length === cases.length && checks.every(check => check.imagesLoaded && check.sendVisible && check.editorVisible);
+if (!passed) throw new Error('私信图片预览或输入区布局验证失败');

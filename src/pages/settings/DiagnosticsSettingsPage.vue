@@ -1,7 +1,7 @@
 <template>
   <div class="settings-section">
     <h3 class="section-title">诊断日志</h3>
-    <p class="description">日志保存在本机，仅在你主动复制、导出，或发送勾选“附带诊断日志”的反馈时离开应用。每个文件最多 2 MB，最多保留 4 个旧文件。</p>
+    <p class="description">日志保存在本机，仅在你主动复制、导出或手动附加到 GitHub Issue 时离开应用。每个文件最多 2 MB，最多保留 4 个旧文件。</p>
 
     <div class="toolbar">
       <AppButton variant="secondary" size="sm" :loading="loading" @click="loadLogs">刷新</AppButton>
@@ -27,7 +27,7 @@
     <p class="path">日志目录：{{ snapshot.directory || '正在获取…' }}</p>
     <section class="report-reader">
       <h4>读取日志附件</h4>
-      <p class="description">粘贴反馈私信中的诊断日志图片或 ZIP 附件链接即可读取。也可在浏览器保存 PNG 原图或 ZIP 文件后点“选择附件”。请勿保存聊天缩略图或截图。</p>
+      <p class="description">可读取旧版客户端生成的诊断日志附件：粘贴反馈私信中的图片或 ZIP 链接，或选择保存的 PNG 原图、ZIP 文件。请勿使用聊天缩略图或截图。</p>
       <div class="toolbar">
         <input v-model="reportUrl" type="url" class="control search" placeholder="https://image.coolapk.com/feed/…png 或 …zip" aria-label="日志附件地址" />
         <AppButton variant="secondary" size="sm" :loading="readingReport" :disabled="!reportUrl.trim() || readingReport" @click="readReportUrl">读取链接</AppButton>

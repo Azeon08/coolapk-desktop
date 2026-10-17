@@ -20,13 +20,14 @@ export interface NECaptchaConfig {
   apiVersion?: 2;
   width?: string | number;
   lang?: string;
-  onReady?: (instance: NECaptchaInstance) => void;
+  onReady?: (instance?: NECaptchaInstance) => void;
   onVerify?: (err: any, data: { validate?: string; [key: string]: any }) => void;
   onClose?: () => void;
   [key: string]: any;
 }
 
 export interface NECaptchaInstance {
+  popUp?: () => void;
   verify: () => void;
   refresh: () => void;
   destroy: () => void;
@@ -45,17 +46,17 @@ export function extractCaptchaParamsFromResponse(data: any): { captchaId?: strin
     if (data.captchaId) {
       return {
         captchaId: data.captchaId,
-        captchaField: data.captchaField || '_v2_post_token',
+        captchaField: typeof data.captchaField === 'string' ? data.captchaField : '',
       };
     }
   }
-  if (typeof extraStr === 'string' && extraStr.trim().startsWith('{')) {
+  if (typeof extraStr === 'object' || (typeof extraStr === 'string' && extraStr.trim().startsWith('{'))) {
     try {
-      const obj = JSON.parse(extraStr);
+      const obj = typeof extraStr === 'string' ? JSON.parse(extraStr) : extraStr;
       if (obj.captchaId) {
         return {
           captchaId: obj.captchaId,
-          captchaField: obj.captchaField || '_v2_post_token',
+          captchaField: typeof obj.captchaField === 'string' ? obj.captchaField : '',
         };
       }
     } catch (e) {
@@ -73,16 +74,18 @@ export function extractCaptchaParamsFromError(error: unknown): { captchaId: stri
   }
   if (!response || typeof response !== 'object') return null;
   const params = extractCaptchaParamsFromResponse(response);
-  if (params?.captchaId) return { captchaId: params.captchaId, captchaField: params.captchaField || '_v2_post_token' };
+  if (params?.captchaId) return { captchaId: params.captchaId, captchaField: params.captchaField ?? '' };
   const reason = [response.messageStatus, response.message, response.error].filter((value) => typeof value === 'string').join(' ');
   if (Number(response.code) === 403 && /(captcha|验证码)/i.test(reason)) {
-    return { captchaId: DEFAULT_COOLAPK_CAPTCHA_ID, captchaField: '_v2_post_token' };
+    return { captchaId: DEFAULT_COOLAPK_CAPTCHA_ID, captchaField: '' };
   }
   return null;
 }
 
 let scriptLoadingPromise: Promise<void> | null = null;
 const SCRIPT_LOAD_TIMEOUT_MS = 15_000;
+const CAPTCHA_INIT_TIMEOUT_MS = 15_000;
+const CAPTCHA_VERIFY_TIMEOUT_MS = 120_000;
 
 /**
  * 动态加载网易易盾 Web JS SDK
@@ -159,17 +162,22 @@ export async function verifyWithCaptcha(captchaId = DEFAULT_COOLAPK_CAPTCHA_ID):
   }
 
   return new Promise<string>((resolve, reject) => {
-    // 创建一个隐藏的挂载容器
+    // API v2 把 element 作为弹窗的 appendTo 容器；必须覆盖视口，不能用零尺寸节点。
     const container = document.createElement('div');
     container.id = `ne-captcha-${Date.now()}`;
     container.style.position = 'fixed';
+    container.style.inset = '0';
     container.style.zIndex = '99999';
     document.body.appendChild(container);
 
     let captchaInstance: NECaptchaInstance | null = null;
     let resolved = false;
+    let initTimeout: ReturnType<typeof setTimeout> | undefined;
+    let verifyTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const cleanup = () => {
+      clearTimeout(initTimeout);
+      clearTimeout(verifyTimeout);
       try {
         if (captchaInstance) {
           captchaInstance.destroy();
@@ -182,63 +190,73 @@ export async function verifyWithCaptcha(captchaId = DEFAULT_COOLAPK_CAPTCHA_ID):
       }
     };
 
-    window.initNECaptcha!(
-      {
-        captchaId,
-        element: container,
-        mode: 'popup',
-        apiVersion: 2,
-        width: '320px',
-        lang: 'zh-CN',
-        onReady: (instance) => {
-          captchaInstance = instance;
+    const fail = (error: Error) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      reject(error);
+    };
+    initTimeout = setTimeout(() => fail(new Error('验证码初始化超时，请重试或检查网络')), CAPTCHA_INIT_TIMEOUT_MS);
+
+    try {
+      window.initNECaptcha!(
+        {
+          captchaId,
+          element: container,
+          mode: 'popup',
+          apiVersion: 2,
+          protocol: 'https',
+          width: '320px',
+          lang: 'zh-CN',
+          onReady: (instance) => {
+            if (!resolved && instance) captchaInstance = instance;
+          },
+          onVerify: (err, data) => {
+            if (resolved) return;
+            if (err) {
+              fail(new Error(typeof err === 'string' ? err : err?.message || '验证码验证失败'));
+              return;
+            }
+            if (data && data.validate) {
+              resolved = true;
+              const prefix = captchaId.slice(0, 8);
+              const token = `NEC:${prefix}:${data.validate}`;
+              cleanup();
+              resolve(token);
+            } else {
+              fail(new Error('验证码凭证无效'));
+            }
+          },
+          onClose: () => {
+            fail(new Error('用户取消了人机验证'));
+          },
         },
-        onVerify: (err, data) => {
-          if (err) {
-            resolved = true;
-            cleanup();
-            reject(new Error(typeof err === 'string' ? err : err?.message || '验证码验证失败'));
+        (instance) => {
+          // 初始化超时之后迟到的实例也必须销毁，避免遗留弹窗。
+          if (resolved) {
+            try { instance.destroy(); } catch { /* SDK 可能已自行销毁 */ }
             return;
           }
-          if (data && data.validate) {
-            resolved = true;
-            const prefix = captchaId.slice(0, 8);
-            const token = `NEC:${prefix}:${data.validate}`;
-            cleanup();
-            resolve(token);
-          } else {
-            resolved = true;
-            cleanup();
-            reject(new Error('验证码凭证无效'));
+          captchaInstance = instance;
+          clearTimeout(initTimeout);
+          if (typeof instance.verify !== 'function') {
+            fail(new Error('易盾验证码实例不支持弹出验证'));
+            return;
+          }
+          try {
+            verifyTimeout = setTimeout(() => fail(new Error('验证码验证超时，请重试')), CAPTCHA_VERIFY_TIMEOUT_MS);
+            // API v2 的 popup 使用 verify；popUp 只适用于旧版 API。
+            instance.verify();
+          } catch (error) {
+            fail(error instanceof Error ? error : new Error('唤起易盾验证码失败'));
           }
         },
-        onClose: () => {
-          if (!resolved) {
-            cleanup();
-            reject(new Error('用户取消了人机验证'));
-          }
-        },
-      },
-      (instance) => {
-        captchaInstance = instance;
-        if (typeof instance.verify !== 'function') {
-          resolved = true;
-          cleanup();
-          reject(new Error('易盾验证码实例不支持弹出验证'));
-          return;
+        (err) => {
+          fail(new Error(typeof err === 'string' ? err : err?.message || '初始化易盾滑块失败'));
         }
-        try {
-          instance.verify();
-        } catch (error) {
-          resolved = true;
-          cleanup();
-          reject(error instanceof Error ? error : new Error('唤起易盾验证码失败'));
-        }
-      },
-      (err) => {
-        cleanup();
-        reject(new Error(typeof err === 'string' ? err : err?.message || '初始化易盾滑块失败'));
-      }
-    );
+      );
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error('初始化易盾滑块失败'));
+    }
   });
 }

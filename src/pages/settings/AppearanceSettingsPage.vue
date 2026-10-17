@@ -225,9 +225,9 @@
 
     <!-- 页面栏目显隐设置区域 -->
     <div class="setting-group">
-      <h4 class="group-title">{{ isAndroidTauri ? '快捷入口栏目显隐设置' : '侧边栏页面栏目显隐设置' }}</h4>
+      <h4 class="group-title">导航栏目显隐设置</h4>
       <p class="group-sub">
-        {{ isAndroidTauri ? '控制手机快捷入口网格中显示的频道和功能。' : '根据个人使用习惯自由开启或关闭左侧侧边栏对应的功能栏目' }}
+        控制侧边栏与手机快捷入口中显示的栏目；“数码”和“发现”开关同时控制手机底栏，底栏始终保留首页、发布和我的。
       </p>
 
       <details class="nav-disclosure nav-main-disclosure">

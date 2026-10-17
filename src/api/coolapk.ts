@@ -93,6 +93,39 @@ async function invokeNative(tauriCmd: string, tauriArgs: any = {}, options: Nati
   }
 }
 
+const commentCaptchaVerifications = new Map<string, Promise<string>>();
+
+async function invokeCommentList(command: string, args: Record<string, unknown>) {
+  const request = (postToken?: string, postTokenField?: string) => invokeNative(command,
+    postToken ? { ...args, postToken, postTokenField } : args, { retry: false, kind: 'comment' });
+  try {
+    return await request();
+  } catch (error) {
+    const captcha = extractCaptchaParamsFromError(error);
+    if (!captcha) throw error;
+    // 仅在服务端明确要求验证时弹窗；并发请求共用验证，成功的 Cookie 由 Rust 保留复用。
+    let verification = commentCaptchaVerifications.get(captcha.captchaId);
+    if (!verification) {
+      verification = verifyWithCaptcha(captcha.captchaId);
+      commentCaptchaVerifications.set(captcha.captchaId, verification);
+    }
+    let postToken: string;
+    try {
+      postToken = await verification;
+    } finally {
+      if (commentCaptchaVerifications.get(captcha.captchaId) === verification) commentCaptchaVerifications.delete(captcha.captchaId);
+    }
+    try {
+      return await request(postToken, captcha.captchaField);
+    } catch (retryError) {
+      if (extractCaptchaParamsFromError(retryError)) {
+        throw new Error('验证后仍无法加载评论，请稍后重试');
+      }
+      throw retryError;
+    }
+  }
+}
+
 export class CoolapkTauriAPI {
   // 1. 首页推荐
   static async getIndexV8Feeds(page: number = 1) {
@@ -489,14 +522,14 @@ export class CoolapkTauriAPI {
       fromFeedAuthor?: number;
     } = {},
   ) {
-    return await invokeNative('get_feed_replies', {
+    return await invokeCommentList('get_feed_replies', {
       feedId,
       page,
       firstItem: options.firstItem || '',
       lastItem: options.lastItem || '',
       listType: options.listType ?? 'lastupdate_desc',
       fromFeedAuthor: options.fromFeedAuthor ?? 0,
-    }, { retry: false, kind: 'comment' });
+    });
   }
 
   // 评论列表不包含完整设备信息，详情接口用于后台补齐评论元数据。
@@ -515,12 +548,12 @@ export class CoolapkTauriAPI {
     // APK 的楼中楼详情使用同一个 feed/replyList；父评论 ID 作为 id，
     // 原生命令固定使用 feedType=feed_reply，并按 lastItem 游标翻页。
     // 不走旧的 Python /feed/replies 路径，也不在失败时切换其他接口。
-    return await invokeNative('get_sub_replies', {
+    return await invokeCommentList('get_sub_replies', {
       feedId,
       replyId,
       page,
       lastItem: options.lastItem || '',
-    }, { retry: false, kind: 'comment' });
+    });
   }
 
   static async getFeedDetail(feedId: string) {

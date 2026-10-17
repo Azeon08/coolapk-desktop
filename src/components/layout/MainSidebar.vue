@@ -108,7 +108,7 @@
           <span class="version-badge" :title="`v${appVersion}`">v{{ appVersion }}</span>
         </div>
         <div class="app-info-actions">
-          <button class="footer-action-btn feedback-btn" title="一键反馈问题或建议" @click="handleFeedback">
+          <button class="footer-action-btn feedback-btn" title="在 GitHub Issues 反馈问题或建议" @click="handleFeedback">
             <i class="fas fa-comment-dots action-icon"></i>
             <span>反馈</span>
           </button>
@@ -141,9 +141,10 @@ import { useAuthStore } from '../../stores/auth';
 import { useNotificationStore } from '../../stores/notifications';
 import { useDownloadStore } from '../../stores/downloads';
 import { APP_VERSION } from '../../constants/version';
+import { CoolapkTauriAPI } from '../../api/coolapk';
 import { triggerSidebarTransition } from '../../utils/routeTransition';
 import { activateHomeTab } from '../../utils/homeTab';
-import { openFeedbackMessage } from '../../utils/feedback';
+import { createFeedbackIssueUrl } from '../../utils/feedback';
 
 const route = useRoute();
 const router = useRouter();
@@ -188,7 +189,7 @@ function handlePrimaryNavClick(event: MouseEvent, path: string) {
 }
 
 function handleFeedback() {
-  openFeedbackMessage(router, authStore);
+  void CoolapkTauriAPI.openUrl(createFeedbackIssueUrl(), 'system');
 }
 
 function handleNavClick(event: MouseEvent) {

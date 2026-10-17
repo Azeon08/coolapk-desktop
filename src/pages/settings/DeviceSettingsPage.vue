@@ -21,26 +21,11 @@
           <span class="status-key">设备码（X-App-Device）</span>
           <code class="status-code" :title="deviceInfo?.deviceCode">{{ deviceInfo?.deviceCode || '加载中...' }}</code>
         </div>
-        <template v-if="!settingsStore.settings.deviceFingerprint.customFingerprint && settingsStore.automaticDeviceProfile">
-          <div class="status-row">
-            <span class="status-key">自动请求机型</span>
-            <span class="status-value">{{ settingsStore.automaticDeviceProfile.label }}（{{ settingsStore.automaticDeviceProfile.source === 'history' ? '最近发布记录' : '兼容兜底模板' }}）</span>
-          </div>
-          <div class="status-row">
-            <span class="status-key">型号 / Build</span>
-            <span class="status-value">{{ settingsStore.automaticDeviceProfile.model }} / {{ settingsStore.automaticDeviceProfile.build }}</span>
-          </div>
-          <p class="tray-tip">从本人最近动态、评论识别手机及系统信息，不代表最近登录设备；无可用记录时使用 iPhone 18 Pro Max 兼容模板。数盟设备 ID 仍使用下方保存的配置。</p>
-          <details>
-            <summary class="row-sub">查看自动 User-Agent</summary>
-            <code class="native-ua">{{ settingsStore.automaticDeviceProfile.userAgent }}</code>
-          </details>
-        </template>
-        <div v-else-if="deviceInfo?.defaultProfile && !settingsStore.settings.deviceFingerprint.customFingerprint" class="status-row">
+        <div v-if="deviceInfo?.defaultProfile" class="status-row">
           <span class="status-key">默认请求机型</span>
           <span class="status-value">{{ deviceInfo.defaultProfile.brand }} {{ deviceInfo.defaultProfile.model }}（{{ deviceInfo.defaultProfile.source === 'native' ? '本机真实设备' : '兼容模板' }}）</span>
         </div>
-        <details v-if="deviceInfo?.defaultProfile && !settingsStore.settings.deviceFingerprint.customFingerprint && !settingsStore.automaticDeviceProfile">
+        <details v-if="deviceInfo?.defaultProfile && !settingsStore.settings.deviceFingerprint.customFingerprint">
           <summary class="row-sub">查看默认 User-Agent</summary>
           <code class="native-ua">{{ deviceInfo.defaultProfile.userAgent }}</code>
         </details>
@@ -164,7 +149,7 @@
       <div class="setting-row">
         <div class="row-info">
           <span class="row-label">启用自定义设备信息</span>
-          <span class="row-sub">自定义请求头中的机型、版本与系统信息；关闭后手机优先使用本机信息，桌面端自动识别账号历史手机，无记录时使用 iPhone 18 Pro Max 模板</span>
+          <span class="row-sub">自定义请求头中的机型、版本与系统信息；关闭后 Android、iOS 和 macOS 使用本机信息，Windows/Linux 使用兼容模板</span>
         </div>
         <AppSwitch v-model="settingsStore.settings.deviceFingerprint.customFingerprint" />
       </div>
@@ -428,9 +413,6 @@ async function refreshDeviceProfile() {
   await nextTick();
   if (await settingsStore.syncDeviceProfile(settingsStore.settings)) await loadDeviceInfo();
 }
-
-// 识别在后台完成，结果更新后重新读取生效设备码，避免仍显示识别前的状态。
-watch(() => settingsStore.automaticDeviceProfile, refreshDeviceProfile);
 
 const currentDeviceId = computed(() => settingsStore.settings.deviceFingerprint?.deviceId || '');
 const deviceIdInput = ref(currentDeviceId.value);

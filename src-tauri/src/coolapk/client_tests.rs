@@ -1294,7 +1294,7 @@ fn test_extract_readable_content_strips_chrome() {
 <html><head><title>动态分享 - 酷安</title></head>
 <body>
 <header><a href="/">酷安</a><a href="/editorChoice">编辑精选</a></header>
-<nav><a href="/apk/">应用</a><a href="/game/">游戏</a><a href="/u/1451266">oxygen的喵</a></nav>
+<nav><a href="/apk/">应用</a><a href="/game/">游戏</a><a href="/u/10086">测试用户</a></nav>
 <div>您当前查看的是「动态分享」，请用酷安手机APP扫码查看详情<br>下载酷安手机APP</div>
 <article>
 <p>在家用 Windows 刷酷安的新方式——</p>
@@ -1308,7 +1308,7 @@ fn test_extract_readable_content_strips_chrome() {
     assert!(cleaned.contains("在家用 Windows 刷酷安"), "正文应保留");
     assert!(cleaned.contains("#数码日常#"), "正文链接应保留");
     assert!(!cleaned.contains("编辑精选"), "导航不应残留");
-    assert!(!cleaned.contains("oxygen的喵"), "导航用户链接不应残留");
+    assert!(!cleaned.contains("测试用户"), "导航用户链接不应残留");
     assert!(!cleaned.contains("粤ICP备"), "页脚不应残留");
     assert!(!cleaned.contains("alert"), "脚本不应残留");
     assert!(!cleaned.contains("<script"), "script 标签不应残留");
@@ -1335,19 +1335,19 @@ fn test_extract_history_list_preserves_entities() {
     let raw = json!({
         "data": [
             {
-                "title": "oxygen",
+                "title": "测试用户",
                 "description": "",
-                "logo": "http://avatar.coolapk.com/data/001/45/12/66_avatar_middle.jpg",
-                "url": "u/1451266",
+                "logo": "http://avatar.coolapk.com/test_avatar_middle.jpg",
+                "url": "u/10086",
                 "historyType": "user",
                 "typeName": "用户",
-                "id": "user:1451266",
+                "id": "user:10086",
                 "entityType": "history",
                 "dateline": 1786022084
             },
             {
                 "id": 247872765,
-                "uid": 1451266,
+                "uid": 10086,
                 "target_type": "apk",
                 "entityType": "recentHistory",
                 "entityId": 247872765,
@@ -1365,9 +1365,9 @@ fn test_extract_history_list_preserves_entities() {
 
     let history = &list[0];
     assert_eq!(history["entityType"], "history");
-    assert_eq!(history["url"], "/u/1451266", "url 应补全前导斜杠");
+    assert_eq!(history["url"], "/u/10086", "url 应补全前导斜杠");
     assert_eq!(
-        history["logo"], "https://avatar.coolapk.com/data/001/45/12/66_avatar_middle.jpg",
+        history["logo"], "https://avatar.coolapk.com/test_avatar_middle.jpg",
         "http 图片应升级为 https"
     );
 
@@ -1447,6 +1447,67 @@ fn test_interaction_response_preserves_user_only_rows() {
 }
 
 #[test]
+fn comment_response_preserves_captcha_without_message() {
+    let raw = json!({"code": 403, "messageStatus": "err_request_captcha_v2", "messageExtra": {"captchaId": "test"}});
+    let error = comment_list_data(raw.clone()).unwrap_err();
+    assert_eq!(serde_json::from_str::<Value>(&error).unwrap(), raw);
+}
+
+#[test]
+fn comment_response_distinguishes_empty_data_from_failure() {
+    assert!(comment_list_data(json!({"data": []})).unwrap().is_empty());
+    assert_eq!(comment_list_data(json!({"data": [{"id": "123"}]})).unwrap().len(), 1);
+    assert!(comment_list_data(json!({"code": 403})).is_err());
+    assert_eq!(comment_list_data(json!({"code": 403, "message": "无权访问"})).unwrap_err(), "无权访问");
+    assert!(comment_list_data(json!({"code": 200, "data": {}})).is_err());
+    assert!(comment_list_data(json!({"status": -1, "message": "网络异常"})).is_err());
+}
+
+#[test]
+fn comment_response_captcha_query_preserves_pagination() {
+    let mut query = vec![("page", "2".into()), ("lastItem", "123".into())];
+    append_comment_captcha_token(&mut query, Some("validated"), Some("_challenge_token"));
+    assert_eq!(query, vec![("page", "2".into()), ("lastItem", "123".into()), ("_challenge_token", "validated".into())]);
+    let mut query = Vec::new();
+    append_comment_captcha_token(&mut query, Some("validated"), Some("id"));
+    assert_eq!(query, vec![("_v2_post_token", "validated".into())]);
+    let mut query = vec![("id", "123".into())];
+    append_comment_captcha_token(&mut query, Some("NEC:test:validated"), Some(""));
+    assert_eq!(query, vec![("id", "123".into())]);
+}
+
+#[test]
+fn comment_response_validation_cookie_preserves_session_and_encodes_token() {
+    assert_eq!(cookie_with_captcha_validation("uid=123; SESSID=test; validate=expired", Some("NEC:test:abc+def/=")),
+        "uid=123; SESSID=test; validate=NEC%3Atest%3Aabc%2Bdef%2F%3D");
+    assert_eq!(cookie_with_captcha_validation("", Some("NEC:test:validated")), "validate=NEC%3Atest%3Avalidated");
+    assert_eq!(cookie_with_captcha_validation("uid=123", None), "uid=123");
+}
+
+#[test]
+fn comment_response_validation_survives_account_changes_logout_and_restart() {
+    let dir = std::env::temp_dir().join(format!("coolapk_captcha_reuse_{}_{}", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir(&dir).unwrap();
+    let client = CoolapkClient::new();
+    client.persist_cookie_to(dir.join("session_cookie.txt"));
+    assert_eq!(client.validation_for_request(None).unwrap(), None);
+    client.validation_for_request(Some("NEC:test:first")).unwrap();
+    client.set_user_cookie("uid=123; SESSID=synthetic".into()).unwrap();
+    client.set_user_cookie("uid=456; SESSID=synthetic".into()).unwrap();
+    client.clear_user_cookie().unwrap();
+    assert_eq!(client.validation_for_request(None).unwrap().as_deref(), Some("NEC:test:first"));
+    let restarted = CoolapkClient::new();
+    restarted.persist_cookie_to(dir.join("session_cookie.txt"));
+    assert_eq!(restarted.validation_for_request(None).unwrap().as_deref(), Some("NEC:test:first"));
+    restarted.validation_for_request(Some("NEC:test:replacement")).unwrap();
+    assert_eq!(restarted.validation_for_request(None).unwrap().as_deref(), Some("NEC:test:replacement"));
+    assert_eq!(restarted.validation_for_request(Some("")).unwrap().as_deref(), Some("NEC:test:replacement"));
+    std::fs::remove_file(dir.join("accounts.json")).unwrap();
+    std::fs::remove_dir(dir).unwrap();
+}
+
+#[test]
 fn test_extract_product_entity_list_flattens_nested_entities() {
     let raw = json!({
         "code": 200,
@@ -1515,7 +1576,7 @@ async fn test_login_cookie_dirty_input_sanitized() {
     let client = CoolapkClient::new();
     client.persist_cookie_to(cookie_file.clone());
 
-    let dirty = "SESSID=abc;\r\n uid=10086; 昵称=oxygen的喵; other=\"v\"";
+    let dirty = "SESSID=abc;\r\n uid=10086; 昵称=测试用户; other=\"v\"";
     client.set_user_cookie(dirty.to_string()).unwrap();
     // 先建立账户，set_user_cookie 才会同步写 JSON 账户库
     client
@@ -1562,7 +1623,22 @@ async fn verify_fans_user_list_fixed() {
         }
     }
 
-    match client.get_fans_user_list("1451266", 1).await {
+    let current_uid = client
+        .get_user_cookie()
+        .unwrap_or_default()
+        .split(';')
+        .find_map(|item| {
+            let (key, value) = item.trim().split_once('=')?;
+            key.eq_ignore_ascii_case("uid")
+                .then(|| value.trim().to_string())
+        })
+        .unwrap_or_default();
+    if current_uid.is_empty() {
+        println!("[fixed fansList] skipped: no authenticated account");
+        return;
+    }
+
+    match client.get_fans_user_list(&current_uid, 1).await {
         Ok(res) => {
             let arr = res["data"].as_array().cloned().unwrap_or_default();
             println!("[fixed fansList] len={}", arr.len());

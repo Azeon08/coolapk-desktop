@@ -19,6 +19,8 @@ vi.mock('vue-router', async (importOriginal) => {
 
 import MobileBottomNav from '../MobileBottomNav.vue';
 import { useAuthStore } from '../../../stores/auth';
+import { useSettingsStore } from '../../../stores/settings';
+import { nextTick } from 'vue';
 import {
   HOME_TAB_REFRESH_EVENT,
   HOME_TAB_SCROLL_TOP_EVENT,
@@ -40,12 +42,41 @@ describe('MobileBottomNav 首页手势', () => {
   const refreshSpy = vi.fn();
 
   beforeEach(() => {
+    localStorage.clear();
     setActivePinia(createPinia());
     vi.clearAllMocks();
     routerMock.currentRoute.value.path = '/';
     resetHomeTabClickState();
     window.addEventListener(HOME_TAB_SCROLL_TOP_EVENT, scrollTopSpy);
     window.addEventListener(HOME_TAB_REFRESH_EVENT, refreshSpy);
+  });
+
+  it.each(['digital', 'discover'] as const)('响应 %s 显隐设置且可恢复入口', async (key) => {
+    const wrapper = mountNav();
+    const settingsStore = useSettingsStore();
+    const label = key === 'digital' ? '数码' : '发现';
+    const otherLabel = key === 'digital' ? '发现' : '数码';
+    settingsStore.toggleNavVisibility(key);
+    await nextTick();
+    expect(wrapper.findAll('.mobile-nav-item').map(item => item.text())).not.toContain(label);
+    expect(navButton(wrapper, otherLabel).exists()).toBe(true);
+    settingsStore.toggleNavVisibility(key);
+    await nextTick();
+    await navButton(wrapper, label).trigger('click');
+    expect(routerMock.push).toHaveBeenCalledWith(`/${key}`);
+    wrapper.unmount();
+  });
+
+  it('同时隐藏数码和发现仍保留首页、发布和我的', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.toggleNavVisibility('digital');
+    settingsStore.toggleNavVisibility('discover');
+    const wrapper = mountNav();
+    expect(wrapper.findAll('.mobile-nav-item').map(item => item.text())).toEqual(['首页', '我的']);
+    expect(wrapper.find('[aria-label="发布动态"]').exists()).toBe(true);
+    await navButton(wrapper, '我的').trigger('click');
+    expect(routerMock.push).toHaveBeenCalledWith('/me');
+    wrapper.unmount();
   });
 
   afterEach(() => {

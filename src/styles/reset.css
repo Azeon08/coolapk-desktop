@@ -16,6 +16,8 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
+  /* 点击由组件提供反馈，避免 WebView 默认高亮在暗色界面闪亮。 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button, input, select, textarea {

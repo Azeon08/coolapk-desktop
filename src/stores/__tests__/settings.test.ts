@@ -4,7 +4,6 @@ import { nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { buildDeviceUserAgent, normalizeSettings, useSettingsStore } from '../../stores/settings';
 import type { AppSettings } from '../../types/settings';
-import { fallbackAccountDevice } from '../../utils/accountDevice';
 
 const fileStoreState = vi.hoisted(() => {
   const values = new Map<string, unknown>();
@@ -21,24 +20,6 @@ const fileStoreState = vi.hoisted(() => {
 vi.mock('@tauri-apps/plugin-store', () => ({ Store: { load: fileStoreState.load } }));
 
 describe('settings store', () => {
-  it('自动机型同步到请求头但不修改手动指纹，保留设备 ID 并让手动配置优先', async () => {
-    (window as any).__TAURI_INTERNALS__ = {};
-    const store = useSettingsStore();
-    await store.initializeSettings();
-    store.settings.deviceFingerprint.deviceId = 'saved-id';
-    const saved = JSON.parse(JSON.stringify(store.settings.deviceFingerprint));
-    await store.setAutomaticDeviceProfile({ ...fallbackAccountDevice });
-    expect(invoke).toHaveBeenLastCalledWith('update_device_profile', { profile: expect.objectContaining({ model: 'iPhone19,7', brand: 'Apple', deviceId: 'saved-id', userAgent: fallbackAccountDevice.userAgent }) });
-    expect(store.settings.deviceFingerprint).toEqual(saved);
-    await store.setAutomaticDeviceProfile({ ...fallbackAccountDevice, source: 'history', userAgent: 'Dalvik/2.1.0 (#Build; Xiaomi; real-model; real-build; 16) +CoolMarket/16.5.1' });
-    expect(invoke).toHaveBeenLastCalledWith('update_device_profile', { profile: expect.objectContaining({ userAgent: 'Dalvik/2.1.0 (#Build; Xiaomi; real-model; real-build; 16) +CoolMarket/16.2.0-2604201-universal CoolapkDesktopAuto' }) });
-    store.settings.deviceFingerprint.customFingerprint = true;
-    await store.syncDeviceProfile(store.settings);
-    expect(invoke).toHaveBeenLastCalledWith('update_device_profile', { profile: expect.objectContaining({ model: saved.model, deviceId: 'saved-id' }) });
-    await store.setAutomaticDeviceProfile(null);
-    expect(store.settings.deviceFingerprint.customFingerprint).toBe(true);
-  });
-
   it('液态玻璃总开关默认关闭，保留已保存的选择', () => {
     expect(normalizeSettings({}).headerGlass).toBe(false);
     expect(normalizeSettings({ headerGlass: true }).headerGlass).toBe(true);

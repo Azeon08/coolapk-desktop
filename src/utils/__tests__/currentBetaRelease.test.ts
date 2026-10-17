@@ -16,7 +16,9 @@ describe('已安装测试版的当前版本日志', () => {
     expect(result.releaseNotes).toBe('测试版更新日志');
     expect(result.publishedAt).toMatch(/^2026-10-14 /);
     expect(result.downloadUrl).toBe(currentRelease.html_url);
-    expect(fetch.mock.calls[1]?.[0]).toEqual(expect.stringContaining('/tags/v1.35.0-beta.4'));
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes('/tags/')).map(([url]) => url)).toEqual([
+      'https://api.github.com/repos/coolapk-desktop/coolapk-desktop/releases/tags/v1.35.0-beta.4',
+    ]);
   });
 
   it.each(['missing', 'error', 'wrong-version', 'draft'])('当前 Release 为 %s 时不展示旧版日志或日期', async (mode) => {

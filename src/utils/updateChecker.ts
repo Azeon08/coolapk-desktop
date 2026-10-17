@@ -3,7 +3,21 @@ import type { UpdateChannel } from '../types/settings';
 import { getPlatformInfo, type PlatformInfo } from './platform';
 
 export { APP_VERSION };
-const RELEASES_URL = 'https://api.github.com/repos/daimiaopeng/coolapk-desktop/releases';
+const UPDATE_REPOSITORY = 'coolapk-desktop/coolapk-desktop';
+type ReleaseCandidate = { release: any; repository: string };
+
+async function fetchReleaseJson(url: string): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/vnd.github.v3+json' }, signal: controller.signal });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`GitHub API HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export type UpdateInfo = {
   hasNew: boolean;
@@ -181,30 +195,27 @@ export function isVersionAllowedInChannel(version: string, channel: UpdateChanne
   return Boolean(parsed && (channel === 'beta' || parsed.prerelease.length === 0));
 }
 
-async function pickRelease(channel: UpdateChannel, platform: PlatformInfo, packageType: UpdatePackageType): Promise<any> {
-  const headers = { Accept: 'application/vnd.github.v3+json' };
-  if (channel === 'beta') {
-    // 稳定版单独读取，避免大量测试版挤出列表窗口。
-    const response = await fetch(`${RELEASES_URL}?per_page=100`, { headers });
-    if (!response.ok) throw new Error(`GitHub API HTTP ${response.status}`);
-    const releases = await response.json();
-    if (!Array.isArray(releases)) throw new Error('发布列表格式无效');
-    const stableResponse = await fetch(`${RELEASES_URL}/latest`, { headers });
-    if (stableResponse.ok) releases.push(await stableResponse.json());
-    else if (stableResponse.status !== 404) throw new Error(`GitHub API HTTP ${stableResponse.status}`);
-    const candidates = releases.filter((release) => !release.draft && normalizeVersion(release.tag_name)
-      && (!release.prerelease || /^v?\d+\.\d+\.\d+-beta\.[1-9]\d*$/.test(release.tag_name)));
-    candidates.sort((a, b) => isNewerVersion(a.tag_name, b.tag_name) ? -1 : isNewerVersion(b.tag_name, a.tag_name) ? 1 : 0);
-    if (!candidates.length) throw new Error('未获取到任何发布版本');
-    return candidates.find((release) => selectReleaseAsset(release, platform, packageType)) || candidates[0];
-  }
-  const response = await fetch(`${RELEASES_URL}/latest`, { headers });
-  if (!response.ok) throw new Error(`GitHub API HTTP ${response.status}`);
-  const release = await response.json();
-  if (release.draft || release.prerelease || !isVersionAllowedInChannel(release.tag_name, 'stable')) {
-    throw new Error('稳定版发布信息无效');
-  }
-  return release;
+async function pickRelease(channel: UpdateChannel, platform: PlatformInfo, packageType: UpdatePackageType): Promise<ReleaseCandidate> {
+  const base = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases`;
+  const requests = channel === 'beta' ? [`${base}?per_page=100`, `${base}/latest`] : [`${base}/latest`];
+  const responses = await Promise.allSettled(requests.map(fetchReleaseJson));
+  const releases: any[] = [];
+  responses.forEach((response, index) => {
+    if (response.status !== 'fulfilled' || !response.value) return;
+    if (channel === 'beta' && index === 0) {
+      if (Array.isArray(response.value)) releases.push(...response.value);
+    } else releases.push(response.value);
+  });
+  const candidates = releases.map((release) => ({ release, repository: UPDATE_REPOSITORY }))
+    .filter(({ release }) => release && !release.draft && normalizeVersion(release.tag_name)
+      && (channel === 'stable' ? !release.prerelease && isVersionAllowedInChannel(release.tag_name, 'stable')
+        : !release.prerelease || /^v?\d+\.\d+\.\d+-beta\.[1-9]\d*$/.test(release.tag_name)));
+  candidates.sort((a, b) => isNewerVersion(a.release.tag_name, b.release.tag_name) ? -1
+    : isNewerVersion(b.release.tag_name, a.release.tag_name) ? 1 : 0);
+  if (!candidates.length) throw new Error('未从 GitHub 获取到可用的发布版本');
+  // 优先可安装的新版本；没有兼容更新包时仍显示最新发布的信息。
+  return candidates.find(({ release }) => (channel === 'beta' || isNewerVersion(release.tag_name))
+    && selectReleaseAsset(release, platform, packageType)) || candidates[0];
 }
 
 export function formatReleaseDate(dateStr?: string): string {
@@ -277,7 +288,7 @@ export async function checkLatestRelease(
   packageType: UpdatePackageType = 'installer'
 ): Promise<UpdateInfo> {
   const currentPlatform = platform ?? await getPlatformInfo();
-  const release = await pickRelease(channel, currentPlatform, packageType);
+  const { release, repository } = await pickRelease(channel, currentPlatform, packageType);
   const tagName = release.tag_name || '';
   const hasNew = Boolean(normalizeVersion(tagName)) && isNewerVersion(tagName);
 
@@ -286,16 +297,15 @@ export async function checkLatestRelease(
 
   // 渠道最新版本可能比已安装版本旧，此时日志、日期和链接必须读取当前安装版本。
   let notesRelease = release;
+  let notesRepository = repository;
   if (!hasNew && normalizeVersion(tagName) !== normalizeVersion(APP_VERSION)) {
     notesRelease = null;
-    try {
-      const response = await fetch(`${RELEASES_URL}/tags/v${encodeURIComponent(APP_VERSION)}`, { headers: { Accept: 'application/vnd.github.v3+json' } });
-      if (response.ok) {
-        const currentRelease = await response.json();
-        if (!currentRelease.draft && normalizeVersion(currentRelease.tag_name) === normalizeVersion(APP_VERSION)) notesRelease = currentRelease;
-      }
-    } catch {
-      // 当前版本日志暂时不可用时不冒用其他版本日志，也不影响更新检查结果。
+    const currentRelease = await fetchReleaseJson(
+      `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/tags/v${encodeURIComponent(APP_VERSION)}`,
+    ).catch(() => null);
+    if (currentRelease && !currentRelease.draft && normalizeVersion(currentRelease.tag_name) === normalizeVersion(APP_VERSION)) {
+      notesRelease = currentRelease;
+      notesRepository = UPDATE_REPOSITORY;
     }
   }
   const releaseNotes = hasNew
@@ -309,7 +319,7 @@ export async function checkLatestRelease(
     latestVersion: tagName || '最新发布',
     releaseNotes,
     publishedAt,
-    downloadUrl: notesRelease?.html_url || 'https://github.com/daimiaopeng/coolapk-desktop/releases',
+    downloadUrl: notesRelease?.html_url || `https://github.com/${notesRepository}/releases`,
     installerUrl,
     installerName: selectedAsset?.name,
     packageType,

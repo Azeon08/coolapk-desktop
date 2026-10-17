@@ -104,6 +104,61 @@ describe('CoolapkTauriAPI 内容新页接口封装', () => {
     expect(invoke).toHaveBeenCalledWith('get_public_feed_detail', { feedId: '123' });
   });
 
+  it.each(['feed', 'sub'])('评论触发验证码后保留分页参数并重试：%s', async (type) => {
+    window.initNECaptcha = vi.fn((config) => config.onVerify?.(null, { validate: 'validated' }));
+    vi.mocked(invoke).mockRejectedValueOnce(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }))
+      .mockResolvedValueOnce(okResponse([{ id: 'reply' }]));
+    const args = type === 'feed'
+      ? { feedId: '123', page: 2, firstItem: 'first', lastItem: 'last', listType: 'popular', fromFeedAuthor: 0 }
+      : { feedId: '123', replyId: '456', page: 2, lastItem: 'last' };
+    const result = type === 'feed'
+      ? await CoolapkTauriAPI.getFeedReplies('123', 2, { firstItem: 'first', lastItem: 'last', listType: 'popular' })
+      : await CoolapkTauriAPI.getSubReplies('123', '456', 2, { lastItem: 'last' });
+    expect(result.data).toEqual([{ id: 'reply' }]);
+    expect(invoke).toHaveBeenNthCalledWith(2, type === 'feed' ? 'get_feed_replies' : 'get_sub_replies', {
+      ...args, postToken: 'NEC:414e5c9b:validated', postTokenField: '',
+    });
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('并发评论请求共用一次验证，并使用服务端指定的令牌字段', async () => {
+    let complete: (() => void) | undefined;
+    window.initNECaptcha = vi.fn((config) => { complete = () => config.onVerify?.(null, { validate: 'validated' }); });
+    vi.mocked(invoke).mockImplementation(async (_command, args: any) => {
+      if (!args.postToken) throw JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2', messageExtra: JSON.stringify({ captchaId: 'testcaptcha', captchaField: '_read_token' }) });
+      return okResponse([]);
+    });
+    const first = CoolapkTauriAPI.getFeedReplies('123');
+    const second = CoolapkTauriAPI.getSubReplies('123', '456');
+    await vi.waitFor(() => expect(window.initNECaptcha).toHaveBeenCalledTimes(1));
+    complete!();
+    await Promise.all([first, second]);
+    expect(invoke).toHaveBeenCalledTimes(4);
+    expect(invoke).toHaveBeenLastCalledWith('get_sub_replies', expect.objectContaining({ postTokenField: '_read_token' }));
+  });
+
+  it('取消评论验证时显示错误且不重试，再次加载可以重新验证', async () => {
+    window.initNECaptcha = vi.fn((config) => config.onClose?.());
+    vi.mocked(invoke).mockRejectedValue(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }));
+    await expect(CoolapkTauriAPI.getFeedReplies('123')).rejects.toThrow('用户取消了人机验证');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    window.initNECaptcha = vi.fn((config) => config.onVerify?.(null, { validate: 'validated' }));
+    vi.mocked(invoke).mockRejectedValueOnce(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }))
+      .mockResolvedValueOnce(okResponse([]));
+    await expect(CoolapkTauriAPI.getFeedReplies('123')).resolves.toEqual(okResponse([]));
+  });
+
+  it('验证后仍被拒绝不循环弹窗，普通错误不触发验证', async () => {
+    window.initNECaptcha = vi.fn((config) => config.onVerify?.(null, { validate: 'validated' }));
+    vi.mocked(invoke).mockRejectedValue(JSON.stringify({ code: 403, messageStatus: 'err_request_captcha_v2' }));
+    await expect(CoolapkTauriAPI.getFeedReplies('123')).rejects.toThrow('验证后仍无法加载评论');
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(window.initNECaptcha).toHaveBeenCalledTimes(1);
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('网络连接失败'));
+    await expect(CoolapkTauriAPI.getFeedReplies('123')).rejects.toThrow('网络连接失败');
+    expect(window.initNECaptcha).toHaveBeenCalledTimes(1);
+  });
+
   it('详情接口触发验证码后带令牌重试一次', async () => {
     (window as any).initNECaptcha = vi.fn((config) => {
       config.onVerify?.(null, { validate: 'validated' });
@@ -112,7 +167,7 @@ describe('CoolapkTauriAPI 内容新页接口封装', () => {
 
     await expect(CoolapkTauriAPI.getFeedDetail('456')).resolves.toEqual(okResponse({ message: '完整正文' }));
     expect(invoke).toHaveBeenNthCalledWith(1, 'get_feed_detail', { feedId: '456' });
-    expect(invoke).toHaveBeenNthCalledWith(2, 'get_feed_detail', { feedId: '456', postToken: 'NEC:414e5c9b:validated', postTokenField: '_v2_post_token' });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'get_feed_detail', { feedId: '456', postToken: 'NEC:414e5c9b:validated', postTokenField: '' });
   });
 
   it('酷友圈活动列表调用 get_event_list', async () => {

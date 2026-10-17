@@ -171,17 +171,21 @@ describe('neteaseCaptcha', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each(['button', 'escape'])('SDK 无法操作时仍能通过 %s 取消并释放页面', async (method) => {
+  it.each(['sdk', 'escape'])('通过 %s 关闭验证码后释放页面且不添加额外按钮', async (method) => {
     vi.useFakeTimers();
     const instance = { verify: vi.fn(), refresh: vi.fn(), destroy: vi.fn() };
     window.initNECaptcha = vi.fn((config, onLoad) => {
-      // 真实 SDK 会清空传入的 element，不能把独立退出入口放在它里面。
-      (config.element as HTMLElement).innerHTML = '<div>验证码内容</div>';
+      const close = document.createElement('button');
+      close.className = 'sdk-close';
+      close.onclick = () => config.onClose?.();
+      (config.element as HTMLElement).replaceChildren(close);
       onLoad?.(instance);
     });
     const failure = expect(verifyWithCaptcha()).rejects.toThrow('用户取消了人机验证');
     await vi.advanceTimersByTimeAsync(0);
-    if (method === 'button') document.querySelector<HTMLButtonElement>('[aria-label="取消安全验证"]')!.click();
+    expect(document.querySelector('[aria-label="取消安全验证"]')).toBeNull();
+    expect(document.querySelectorAll('[id^="ne-captcha-"] button')).toHaveLength(1);
+    if (method === 'sdk') document.querySelector<HTMLButtonElement>('.sdk-close')!.click();
     else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await failure;
     expect(instance.destroy).toHaveBeenCalledOnce();

@@ -170,19 +170,6 @@ export async function verifyWithCaptcha(captchaId = DEFAULT_COOLAPK_CAPTCHA_ID):
     container.style.zIndex = '99999';
     document.body.appendChild(container);
 
-    // SDK 会替换 element 的子节点，独立取消入口必须放在其宿主之外。
-    const sdkHost = document.createElement('div');
-    sdkHost.style.cssText = 'position:absolute;inset:0';
-    container.appendChild(sdkHost);
-
-    // SDK 资源异常时也能主动退出，避免全屏宿主一直拦住页面操作。
-    const cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.textContent = '取消验证';
-    cancelButton.setAttribute('aria-label', '取消安全验证');
-    cancelButton.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#333;cursor:pointer';
-    container.appendChild(cancelButton);
-
     let captchaInstance: NECaptchaInstance | null = null;
     let resolved = false;
     let initTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -216,7 +203,6 @@ export async function verifyWithCaptcha(captchaId = DEFAULT_COOLAPK_CAPTCHA_ID):
       event.stopPropagation();
       fail(new Error('用户取消了人机验证'));
     };
-    cancelButton.addEventListener('click', () => fail(new Error('用户取消了人机验证')));
     document.addEventListener('keydown', onKeyDown, true);
     initTimeout = setTimeout(() => fail(new Error('验证码初始化超时，请重试或检查网络')), CAPTCHA_INIT_TIMEOUT_MS);
 
@@ -224,7 +210,7 @@ export async function verifyWithCaptcha(captchaId = DEFAULT_COOLAPK_CAPTCHA_ID):
       window.initNECaptcha!(
         {
           captchaId,
-          element: sdkHost,
+          element: container,
           mode: 'popup',
           apiVersion: 2,
           protocol: 'https',

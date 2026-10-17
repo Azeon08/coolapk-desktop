@@ -170,4 +170,24 @@ describe('neteaseCaptcha', () => {
     expect(document.querySelector('[id^="ne-captcha-"]')).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each(['button', 'escape'])('SDK 无法操作时仍能通过 %s 取消并释放页面', async (method) => {
+    vi.useFakeTimers();
+    const instance = { verify: vi.fn(), refresh: vi.fn(), destroy: vi.fn() };
+    window.initNECaptcha = vi.fn((config, onLoad) => {
+      // 真实 SDK 会清空传入的 element，不能把独立退出入口放在它里面。
+      (config.element as HTMLElement).innerHTML = '<div>验证码内容</div>';
+      onLoad?.(instance);
+    });
+    const failure = expect(verifyWithCaptcha()).rejects.toThrow('用户取消了人机验证');
+    await vi.advanceTimersByTimeAsync(0);
+    if (method === 'button') document.querySelector<HTMLButtonElement>('[aria-label="取消安全验证"]')!.click();
+    else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await failure;
+    expect(instance.destroy).toHaveBeenCalledOnce();
+    expect(document.querySelector('[id^="ne-captcha-"]')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(instance.destroy).toHaveBeenCalledOnce();
+  });
 });

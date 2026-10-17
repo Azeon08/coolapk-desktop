@@ -91,4 +91,6 @@ coolapk-desktop 是社区维护的非官方酷安客户端，与酷安官方及�
 
 网易易盾验证码 SDK 使用 `new Function` 编译模板，因此客户端 CSP 的 `script-src` 包含 `unsafe-eval`。此许可对当前页面中已获准加载的脚本生效，无法按域名仅授权易盾；脚本来源白名单和内联脚本限制仍保留。可运行 `node scripts/test-captcha-csp.mjs` 在 Chromium 中验证模板编译及其余脚本限制。
 
+SDK 还会动态插入内联样式表。release 中 Tauri 会向 `style-src` 添加资源 nonce/hash，使该指令的 `unsafe-inline` 失效；因此单独设置 `style-src-elem 'self' 'unsafe-inline'`，允许应用及验证码的动态样式元素，保留脚本限制。可运行 `node scripts/test-captcha-sdk-csp.mjs` 加载官方公开体验配置，对比 release nonce 下的样式阻止和正常弹窗；此测试不完成验证码，也不读取账户信息。
+
 本安全策略仅适用于 `coolapk-desktop` 项目自身的代码、构建产物以及由本项目实现的客户端逻辑。

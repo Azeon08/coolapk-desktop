@@ -14,12 +14,25 @@ on:
       build_sha:
         type: string
         required: true
+      create_release:
+        type: boolean
+        required: false
+        default: false
+      release_tag:
+        type: string
+        required: false
+        default: ''
   workflow_dispatch:
     inputs:
       create_release:
-        description: '发布 Release（仅 tag 推送时生效）'
+        description: '发布 GitHub Release（需填写已推送的正式版本标签）'
         type: boolean
         default: false
+      release_tag:
+        description: '正式版本标签，例如 v1.36.0'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -30,7 +43,7 @@ concurrency:
 
 env:
   BUILD_VERSION: ${{ inputs.build_version }}
-  RELEASE_TAG: ${{ inputs.build_version && format('v{0}', inputs.build_version) || github.ref_name }}
+  RELEASE_TAG: ${{ inputs.build_version && format('v{0}', inputs.build_version) || inputs.release_tag || github.ref_name }}
   VITE_BUILD_COMMIT: ${{ inputs.build_sha || github.sha }}
 
 jobs:
@@ -52,7 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.build_sha || github.sha }}
+          ref: ${{ inputs.build_sha || (inputs.create_release && inputs.release_tag != '' && inputs.release_tag) || github.sha }}
+
+      - name: 记录实际构建源码提交
+        shell: bash
+        run: echo "VITE_BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: 安装 Node.js
         uses: actions/setup-node@v5
@@ -102,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.build_sha || github.sha }}
+          ref: ${{ inputs.build_sha || (inputs.create_release && inputs.release_tag != '' && inputs.release_tag) || github.sha }}
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -185,7 +202,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.build_sha || github.sha }}
+          ref: ${{ inputs.build_sha || (inputs.create_release && inputs.release_tag != '' && inputs.release_tag) || github.sha }}
+
+      - name: 记录实际构建源码提交
+        shell: bash
+        run: echo "VITE_BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: 验证手动 Release 标签
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
+        shell: bash
+        env:
+          TARGET_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$TARGET_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release 标签必须是已推送的正式版本，例如 v1.36.0。" >&2
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$TARGET_RELEASE_TAG" || {
+            echo "找不到标签 $TARGET_RELEASE_TAG；请先推送该标签，再运行 Release。" >&2
+            exit 1
+          }
 
       - name: 安装 Node.js
         uses: actions/setup-node@v5
@@ -221,9 +257,9 @@ jobs:
         run: npm run version:set -- "$BUILD_VERSION" --beta
 
       - name: 同步标签版本号
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         shell: bash
-        run: npm run version:set -- ${GITHUB_REF_NAME#v}
+        run: npm run version:set -- "${RELEASE_TAG#v}"
 
       - name: 构建前端
         run: npm run build
@@ -241,7 +277,7 @@ jobs:
           '
 
       - name: 构建与上传产物（非 Tag 推送）
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') && !(runner.os == 'Linux' && inputs.build_version != '') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') && !(runner.os == 'Linux' && inputs.build_version != '') && !(github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -250,14 +286,14 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: '[platform]-[arch]-[bundle]'
 
-      - name: 发布 Release 产物（Tag 推送）
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: 发布 Release 产物
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 酷安 ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: 酷安 ${{ env.RELEASE_TAG }}
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
@@ -302,7 +338,7 @@ jobs:
           bash scripts/fix-appimage-permissions.sh "$appimage"
 
       - name: 上传 Linux AppImage 工作流产物
-        if: ${{ runner.os == 'Linux' && !startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ runner.os == 'Linux' && !startsWith(github.ref, 'refs/tags/v') && !(github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         uses: actions/upload-artifact@v6
         with:
           name: linux-x64-appimage
@@ -310,10 +346,10 @@ jobs:
           if-no-files-found: error
 
       - name: 发布 Linux AppImage
-        if: ${{ runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ runner.os == 'Linux' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '')) }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/appimage/*.AppImage --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$RELEASE_TAG" src-tauri/target/release/bundle/appimage/*.AppImage --repo "$GITHUB_REPOSITORY"
 
       - name: 准备 Windows 单文件便携版
         if: ${{ runner.os == 'Windows' }}
@@ -352,7 +388,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.build_sha || github.sha }}
+          ref: ${{ inputs.build_sha || (inputs.create_release && inputs.release_tag != '' && inputs.release_tag) || github.sha }}
+
+      - name: 记录实际构建源码提交
+        shell: bash
+        run: echo "VITE_BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: 安装 Node.js
         uses: actions/setup-node@v5
@@ -379,9 +419,9 @@ jobs:
         run: npm run version:set -- "$BUILD_VERSION" --beta
 
       - name: 同步标签版本号
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         shell: bash
-        run: npm run version:set -- ${GITHUB_REF_NAME#v}
+        run: npm run version:set -- "${RELEASE_TAG#v}"
 
       - name: 设置 CI 纯英文包名 (coolapk-desktop)
         shell: bash
@@ -520,7 +560,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.build_sha || github.sha }}
+          ref: ${{ inputs.build_sha || (inputs.create_release && inputs.release_tag != '' && inputs.release_tag) || github.sha }}
+
+      - name: 记录实际构建源码提交
+        shell: bash
+        run: echo "VITE_BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: 安装 Node.js
         uses: actions/setup-node@v5
@@ -568,9 +612,9 @@ jobs:
         run: npm run version:set -- "$BUILD_VERSION" --beta
 
       - name: 同步标签版本号
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
         shell: bash
-        run: npm run version:set -- ${GITHUB_REF_NAME#v}
+        run: npm run version:set -- "${RELEASE_TAG#v}"
 
       - name: 准备 Android Release 签名
         shell: bash
@@ -624,7 +668,7 @@ jobs:
   publish-android:
     name: 发布 Android APK 和 AAB
     needs: [build, android-build]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
     runs-on: ubuntu-22.04
     steps:
       - name: 下载 Android 产物
@@ -636,12 +680,12 @@ jobs:
       - name: 上传到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" android-release/* --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE_TAG" android-release/* --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-ios:
     name: 发布 iOS 未签名 IPA
     needs: [build, ios-build]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
     runs-on: ubuntu-22.04
     steps:
       - name: 下载 iOS 产物
@@ -653,12 +697,12 @@ jobs:
       - name: 上传到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" ios-release/*.ipa --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE_TAG" ios-release/*.ipa --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-windows-portable:
     name: 发布 Windows 单文件便携版
     needs: build
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.release_tag != '') }}
     runs-on: ubuntu-22.04
     steps:
       - name: 下载 Windows 单文件产物
@@ -671,4 +715,4 @@ jobs:
       - name: 上传到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" portable/*.exe --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$RELEASE_TAG" portable/*.exe --repo "$GITHUB_REPOSITORY"

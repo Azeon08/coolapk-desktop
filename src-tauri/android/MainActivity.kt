@@ -36,10 +36,52 @@ import java.lang.ref.WeakReference
 class MainActivity : TauriActivity() {
     @Volatile private var topSafeAreaPx = 0
     private var mainWebView: WeakReference<WebView>? = null
+    private var activityResumed = false
+    private var foregroundDrawRequest = 0L
 
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
         mainWebView = WeakReference(webView)
+        requestForegroundDraw()
+    }
+
+    // 部分系统 WebView 从后台恢复后仍显示空白，直到触摸滚动才提交下一帧。
+    // 等窗口可见且获得焦点后请求绘制，不重载页面或改变滚动、输入状态。
+    private fun requestForegroundDraw() {
+        if (!activityResumed || !hasWindowFocus()) return
+        val webView = mainWebView?.get() ?: return
+        val request = ++foregroundDrawRequest
+        fun canDraw() = request == foregroundDrawRequest && activityResumed &&
+            hasWindowFocus() && webView.isAttachedToWindow && webView.isShown
+        webView.post {
+            if (!canDraw()) return@post
+            webView.requestLayout()
+            webView.postInvalidateOnAnimation()
+            // DOM 与合成帧异步更新；内容准备好后再请求绘制，避免只刷新到旧的空白帧。
+            webView.postVisualStateCallback(request, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (canDraw()) webView.postInvalidateOnAnimation()
+                }
+            })
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        requestForegroundDraw()
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        foregroundDrawRequest++
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) requestForegroundDraw()
+        else foregroundDrawRequest++
     }
 
     @Keep

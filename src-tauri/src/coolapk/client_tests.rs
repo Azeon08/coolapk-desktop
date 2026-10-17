@@ -50,7 +50,7 @@ fn generated_duid_is_guest_default_and_account_explicit_only() {
     client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
     assert_identity("DUoptin123456");
     client.set_user_cookie("uid=10001; SESSID=reauthenticated-session".into()).unwrap();
-    assert_identity("DUmanual123456");
+    assert_identity("DUoptin123456");
     client.generated_identity.write().unwrap().account_id = Some(("10001".into(), "DUoptin123456".into()));
     client.set_user_cookie("uid=10002; SESSID=another-session".into()).unwrap();
     assert_identity("DUmanual123456");
@@ -102,6 +102,55 @@ async fn guest_duid_cache_restores_without_network_and_never_activates_for_login
     assert!(info["data"]["deviceId"].is_null());
     assert_eq!(info["data"]["deviceIdSource"], "default");
     std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[tokio::test]
+async fn account_duid_persists_across_restart_cookie_refresh_and_account_switch() {
+    let mut random = [0; 8];
+    getrandom::fill(&mut random).unwrap();
+    let folder = std::env::temp_dir().join(format!("coolapk-account-duid-{}", hex::encode(random)));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("accounts.json"), json!({
+        "lastLoginUid": "10001", "generatedGuestDeviceId": "DUguest123456",
+        "accounts": [{ "uid": "10001", "cookie": "uid=10001; SESSID=synthetic-session" }]
+    }).to_string()).unwrap();
+    let client = CoolapkClient::new();
+    client.persist_cookie_to(folder.join("session_cookie.txt"));
+    client.update_device_profile(DeviceProfile { device_id: Some("DUmanual123456".into()), ..Default::default() });
+    client.initialize_device_identity().await.unwrap();
+    client.generate_device_identity_with(async { Ok("DUaccountA123456".into()) }).await.unwrap();
+    client.set_user_cookie("uid=10001; SESSID=refreshed-session".into()).unwrap();
+    assert_eq!(client.effective_custom_device_id().as_deref(), Some("DUaccountA123456"));
+    client.set_user_cookie("uid=10002; SESSID=another-session".into()).unwrap();
+    assert_eq!(client.effective_custom_device_id().as_deref(), Some("DUmanual123456"));
+    client.generate_device_identity_with(async { Ok("DUaccountB123456".into()) }).await.unwrap();
+    client.set_user_cookie("uid=10001; SESSID=refreshed-session".into()).unwrap();
+    assert_eq!(client.effective_custom_device_id().as_deref(), Some("DUaccountA123456"));
+    client.clear_user_cookie().unwrap();
+    assert_eq!(client.effective_custom_device_id().as_deref(), Some("DUguest123456"));
+    client.set_user_cookie("uid=10001; SESSID=new-login".into()).unwrap();
+    client.set_last_login_uid("10001");
+
+    let restarted = CoolapkClient::new();
+    restarted.persist_cookie_to(folder.join("session_cookie.txt"));
+    let info = restarted.initialize_device_identity().await.unwrap();
+    assert_eq!(info["data"]["deviceId"], "DUaccountA123456");
+    assert_eq!(info["data"]["deviceIdSource"], "generated_account");
+    restarted.use_saved_device_identity().unwrap();
+    assert!(restarted.effective_custom_device_id().is_none());
+    assert!(restarted.load_accounts_root()["generatedAccountDeviceIds"].get("10001").is_none());
+    restarted.set_user_cookie("uid=10002; SESSID=another-session".into()).unwrap();
+    assert_eq!(restarted.effective_custom_device_id().as_deref(), Some("DUaccountB123456"));
+    std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[tokio::test]
+async fn account_duid_save_failure_does_not_apply_generated_identity() {
+    let client = CoolapkClient::new();
+    client.set_user_cookie("uid=10001; SESSID=synthetic-session".into()).unwrap();
+    let result = client.generate_device_identity_with(async { Ok("DUunsaved123456".into()) }).await;
+    assert!(result.is_err());
+    assert!(client.generated_identity.read().unwrap().account_id.is_none());
 }
 
 #[test]

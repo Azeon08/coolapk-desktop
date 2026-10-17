@@ -384,9 +384,9 @@ describe('设置页面交互', () => {
       await generate.trigger('click');
       await flushPromises();
       expect(invoke).toHaveBeenCalledWith('generate_device_identity');
-      expect(wrapper.text()).toContain('本次登录生成（DUgenerated123456）');
+      expect(wrapper.text()).toContain('当前账号已保存（DUgenerated123456）');
       expect(settings.settings.deviceFingerprint.deviceId).toBe('DUmanual123456');
-      await wrapper.findAll('button').find(button => button.text() === '使用已保存配置')!.trigger('click');
+      await wrapper.findAll('button').find(button => button.text() === '使用手动配置')!.trigger('click');
       await flushPromises();
       expect(wrapper.text()).toContain('手动配置（DUmanual123456）');
     } finally { wrapper.unmount(); vi.mocked(invoke).mockResolvedValue(undefined); }

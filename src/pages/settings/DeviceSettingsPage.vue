@@ -31,7 +31,7 @@
         </details>
         <p class="tray-tip">
           <i class="fas fa-info-circle"></i>
-          未登录时自动获取并复用游客设备 ID；登录后使用已保存的手动配置，点击“自动生成并使用”才启用生成值。
+          未登录时自动获取并复用游客设备 ID；登录后优先复用当前账号已生成并保存的 ID，没有生成记录时使用手动配置。
         </p>
       </div>
     </div>
@@ -44,7 +44,7 @@
           粘贴官方 Android 酷安复制的完整日志或设备 ID，保存后用于应用请求的设备标识。iOS 官方酷安没有下述获取入口，可在电脑上的安卓虚拟机中安装官方 Android 酷安，获取设备 ID 后传到 iPhone / iPad，手动粘贴到此处并保存。
         </p>
         <p class="card-desc">
-          自动生成会联网向数盟获取 DUID，不会发送酷安账号或 Cookie。游客生成值保存在本机复用；登录后的生成值仅用于当前登录会话，退出或切换账号后停用，不覆盖手动配置。
+          自动生成会联网向数盟获取 DUID，不会发送酷安账号或 Cookie。生成值保存在本机，登录后按账号分别保存，重启及同账号重新登录后继续复用；切换账号时使用各自保存的值，不覆盖手动配置。
         </p>
 
         <div class="device-id-input-row">
@@ -74,8 +74,8 @@
             <i :class="generatingDeviceId ? 'fas fa-spinner fa-spin' : 'fas fa-wand-magic-sparkles'"></i>
             {{ generatingDeviceId ? '正在生成...' : '自动生成并使用' }}
           </button>
-          <button v-if="deviceInfo?.deviceIdSource === 'generated_account'" type="button" class="action-btn" :disabled="generatingDeviceId" @click="useSavedDeviceId">
-            使用已保存配置
+          <button v-if="deviceInfo?.deviceIdSource === 'generated_account'" type="button" class="action-btn" :disabled="generatingDeviceId" title="清除当前账号的生成记录，恢复手动配置" @click="useSavedDeviceId">
+            使用手动配置
           </button>
           <button
             type="button"
@@ -428,7 +428,7 @@ const generatingDeviceId = ref(false);
 const activeDeviceId = computed(() => deviceInfo.value?.deviceId || currentDeviceId.value);
 const identitySourceLabel = computed(() => {
   if (deviceInfo.value?.deviceIdSource === 'generated_guest') return '游客自动生成';
-  if (deviceInfo.value?.deviceIdSource === 'generated_account') return '本次登录生成';
+  if (deviceInfo.value?.deviceIdSource === 'generated_account') return '当前账号已保存';
   return '手动配置';
 });
 
@@ -439,7 +439,7 @@ async function generateDeviceId() {
     const res = await invoke<any>('generate_device_identity');
     if (res?.code !== 200 || !res.data?.deviceId) throw new Error('未获取到有效设备 ID');
     deviceInfo.value = res.data;
-    showToast('设备 ID 已生成并用于后续请求', 'success');
+    showToast('设备 ID 已生成并保存，后续请求及重启后将继续复用', 'success');
     emit('deviceIdSaved');
   } catch (error) {
     // 原生层只返回受控错误，不展示服务端原始响应或生成请求中的标识。
@@ -454,7 +454,7 @@ async function useSavedDeviceId() {
     const res = await invoke<any>('use_saved_device_identity');
     if (res?.code !== 200) throw new Error('无法恢复设备配置');
     deviceInfo.value = res.data;
-    showToast('已恢复使用已保存的设备配置', 'success');
+    showToast('已清除当前账号的生成记录，恢复使用手动配置', 'success');
   } catch {
     showToast('恢复设备配置失败，请重试', 'error');
   }

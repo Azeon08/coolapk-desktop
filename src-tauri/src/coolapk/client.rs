@@ -1172,7 +1172,7 @@ impl CoolapkClient {
             .filter(|s| !s.is_empty())
     }
 
-    /// 启动时恢复游客 DUID；已有登录 Cookie 时不生成，也不启用游客值。
+    /// 启动时恢复游客及当前账号的 DUID；登录状态下不自动生成。
     pub async fn initialize_device_identity(&self) -> Result<Value, String> {
         {
             let cached = self.load_accounts_root().get("generatedGuestDeviceId").and_then(Value::as_str)
@@ -1181,6 +1181,7 @@ impl CoolapkClient {
             state.automatic = true;
             if state.guest_id.is_none() { state.guest_id = cached; }
         }
+        self.restore_account_device_identity();
         self.ensure_guest_device_identity().await;
         self.sync_device_code();
         self.get_device_info()
@@ -1228,7 +1229,6 @@ impl CoolapkClient {
         generation: impl std::future::Future<Output = Result<String, String>>,
     ) -> Result<Value, String> {
         let uid = self.current_uid();
-        let is_guest = uid.is_none();
         let epoch = self.generated_identity.read().map_err(|_| "无法读取设备 ID 状态")?.auth_epoch;
         let _generation = self.identity_generation.lock().await;
         let id = generation.await?;
@@ -1237,24 +1237,57 @@ impl CoolapkClient {
             if state.auth_epoch != epoch || self.current_uid() != uid {
                 return Err("登录状态已变化，生成结果未应用，请重新点击生成".into());
             }
+            // 保存成功后才应用，防止显示成功却在重启后丢失。
+            let mut root = self.load_accounts_root();
+            if let Some(uid) = uid.as_deref() {
+                if !root["generatedAccountDeviceIds"].is_object() {
+                    root["generatedAccountDeviceIds"] = json!({});
+                }
+                root["generatedAccountDeviceIds"][uid] = json!(id);
+            } else {
+                root["generatedGuestDeviceId"] = json!(id);
+            }
+            self.save_device_identity_root(&root)?;
             if let Some(uid) = uid { state.account_id = Some((uid, id.clone())); }
             else { state.guest_id = Some(id.clone()); }
             state.error = None;
             state.last_failure = None;
-        }
-        if is_guest {
-            let mut root = self.load_accounts_root();
-            root["generatedGuestDeviceId"] = json!(id);
-            self.save_accounts_root(&root);
         }
         self.sync_device_code();
         self.get_device_info()
     }
 
     pub fn use_saved_device_identity(&self) -> Result<Value, String> {
-        self.generated_identity.write().map_err(|_| "无法读取设备 ID 状态")?.session_changed();
+        let mut state = self.generated_identity.write().map_err(|_| "无法读取设备 ID 状态")?;
+        if let Some(uid) = self.current_uid() {
+            let mut root = self.load_accounts_root();
+            if let Some(ids) = root.get_mut("generatedAccountDeviceIds").and_then(Value::as_object_mut) {
+                if ids.remove(&uid).is_some() { self.save_device_identity_root(&root)?; }
+            }
+        }
+        state.session_changed();
+        drop(state);
         self.sync_device_code();
         self.get_device_info()
+    }
+
+    fn restore_account_device_identity(&self) {
+        let uid = self.current_uid();
+        let root = self.load_accounts_root();
+        let cached = uid.as_deref().and_then(|uid| root.get("generatedAccountDeviceIds")?.get(uid)?.as_str())
+            .filter(|id| super::shuzilm::valid_duid(id)).map(str::to_owned);
+        if let Ok(mut state) = self.generated_identity.write() {
+            if self.current_uid() != uid { return; }
+            state.account_id = uid.zip(cached);
+        }
+    }
+
+    fn save_device_identity_root(&self, root: &Value) -> Result<(), String> {
+        let path = self.accounts_file_path().ok_or("设备 ID 存储尚未初始化，请重启应用后重试")?;
+        let text = serde_json::to_string_pretty(root).map_err(|_| "无法保存设备 ID")?;
+        let temporary = path.with_extension("device-id.tmp");
+        std::fs::write(&temporary, text).map_err(|_| "无法保存设备 ID，请检查应用数据目录权限".to_string())?;
+        std::fs::rename(&temporary, path).map_err(|_| "无法保存设备 ID，请检查应用数据目录权限".to_string())
     }
 
     /// 获取用户手动填写的 ddid Cookie 值。
@@ -1492,6 +1525,7 @@ impl CoolapkClient {
                         if let Ok(mut stored) = self.user_cookie.write() {
                             *stored = Some(cookie);
                         }
+                        self.restore_account_device_identity();
                         self.sync_device_code();
                         return;
                     }
@@ -1787,7 +1821,7 @@ impl CoolapkClient {
     }
 
     pub fn set_user_cookie(&self, cookie: String) -> Result<(), String> {
-        let previous_cookie = self.get_user_cookie();
+        let previous_uid = self.current_uid();
         let safe_ascii = Self::sanitize_cookie(&cookie);
 
         let mut stored = self
@@ -1800,8 +1834,9 @@ impl CoolapkClient {
             Some(safe_ascii)
         };
         drop(stored);
-        if previous_cookie != self.get_user_cookie() {
+        if previous_uid != self.current_uid() {
             if let Ok(mut state) = self.generated_identity.write() { state.session_changed(); }
+            self.restore_account_device_identity();
         }
         // 登录态变化（登录/登出/切换账号）后同步设备码
         self.sync_device_code();

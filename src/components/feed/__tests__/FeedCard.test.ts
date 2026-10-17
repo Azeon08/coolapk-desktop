@@ -1074,7 +1074,15 @@ describe('桌面端点击动态的行为', () => {
     const wrapper = await mountCard(true);
     await wrapper.find('article').trigger('click');
     await flushPromises();
-    expect(mocks.routerPush).toHaveBeenCalledWith('/feed/42');
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: '/feed/42', query: { scrollTo: 'top' } });
+    wrapper.unmount();
+  });
+
+  it('开启详情入口时回复图标携带评论区落点', async () => {
+    const wrapper = await mountCard(true);
+    await wrapper.findComponent({ name: 'FeedActionBar' }).vm.$emit('open-comment');
+    await flushPromises();
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: '/feed/42', query: { scrollTo: 'comments' } });
     wrapper.unmount();
   });
 

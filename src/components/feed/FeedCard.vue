@@ -459,7 +459,11 @@ async function toggleAuthorFollow() {
   catch (error) { showToast(getErrorMessage(error, '关注作者失败'), 'error'); }
   finally { authorFollowPending.value = false; }
 }
-function openOfficialDetail() { appStore.setFeedDetailContext(String(props.feed.id), props.feed); void router.push(`/feed/${props.feed.id}`); }
+function navigateToOfficialDetail(scrollTo: 'top' | 'comments') {
+  appStore.setFeedDetailContext(String(props.feed.id), props.feed);
+  void router.push({ path: `/feed/${props.feed.id}`, query: { scrollTo } });
+}
+function openOfficialDetail() { navigateToOfficialDetail('top'); }
 async function scrollToMobileComments() { void openComments(); await nextTick(); cardRef.value?.querySelector('.comment-toolbar')?.scrollIntoView({ block: 'start', behavior: settingsStore.settings.reduceMotion ? 'auto' : 'smooth' }); }
 async function writeMobileComment() { if (!authStore.isLoggedIn) { authStore.openLoginModal(); return; } void openComments(); await nextTick(); commentSectionRef.value?.openComposer(); }
 const isAnswerCard = computed(() => Boolean(props.answerMode) || isAnswerSearchEntity(props.feed as any));
@@ -1369,7 +1373,7 @@ function keepCollapsedCardVisible(card: HTMLElement, scrollContainer: HTMLElemen
 }
 
 async function toggleComments() {
-  if (!props.detailMode && opensDetailOnClick.value && !isQuestionCard.value && !isAnswerCard.value) { openOfficialDetail(); return; }
+  if (!props.detailMode && opensDetailOnClick.value && !isQuestionCard.value && !isAnswerCard.value) { navigateToOfficialDetail('comments'); return; }
   if (props.disableInlineComments) {
     emit('open-comment', props.feed);
     return;

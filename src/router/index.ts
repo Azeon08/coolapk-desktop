@@ -187,5 +187,7 @@ router.afterEach((to, from, failure) => {
   }
   setDiagnosticPage(page);
   logDiagnostic('info', 'navigation', 'route_changed', `from=${previousPage} to=${page}`);
+  // 卡片正文与回复图标明确指定落点，由详情页在内容挂载后定位，不能再用缓存覆盖。
+  if (to.name === 'FeedDetail' && ['top', 'comments'].includes(String(to.query.scrollTo || ''))) return;
   void restoreRouteScrollPosition(to.fullPath);
 });

@@ -3,10 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { defineComponent, inject, ref } from 'vue';
 import { mobileDetailActionsHiddenKey } from '../../composables/useMobileReadingNavigation';
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), context: vi.fn(), save: vi.fn(), back: vi.fn(), replace: vi.fn(), history: { back: '/' as string | null }, mobile: { value: true } as { value: boolean } }));
+const mocks = vi.hoisted(() => ({ detail: vi.fn(), context: vi.fn(), save: vi.fn(), back: vi.fn(), replace: vi.fn(), query: { replyId: '123' } as Record<string, string>, history: { back: '/' as string | null }, mobile: { value: true } as { value: boolean } }));
 vi.mock('../../api/coolapk', () => ({ CoolapkTauriAPI: { getFeedDetail: mocks.detail } }));
 vi.mock('../../stores/app', () => ({ useAppStore: () => ({ getFeedDetailContext: mocks.context, setFeedDetailContext: mocks.save }) }));
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { feedId: '42' }, query: { replyId: '123' } }), useRouter: () => ({ back: mocks.back, replace: mocks.replace, options: { history: { state: mocks.history } } }) }));
+vi.mock('vue-router', () => ({ useRoute: () => ({ params: { feedId: '42' }, query: mocks.query }), useRouter: () => ({ back: mocks.back, replace: mocks.replace, options: { history: { state: mocks.history } } }) }));
 vi.mock('../../router', () => ({ router: { push: vi.fn(), resolve: vi.fn(() => ({ matched: [] })) } }));
 vi.mock('../../composables/usePageTabTitle', () => ({ usePageTabTitle: () => {} }));
 vi.mock('../../composables/useOfficialMobileFeedDetail', async (importOriginal) => {
@@ -45,8 +45,51 @@ describe('官方详情评论加载', () => {
     } finally { wrapper.unmount(); }
   });
   beforeEach(() => {
+    mocks.query = { replyId: '123' };
     mocks.mobile.value = true;
     useSettingsStore().settings.desktopCommentsOnRight = false;
+  });
+  it.each(['top', 'comments'])('根据入口定位到 %s，详情刷新后不打断继续阅读', async scrollTo => {
+    mocks.query = { scrollTo };
+    mocks.context.mockReturnValue({ id: '42', uid: '1', username: '作者', message: '正文' });
+    let finish!: (value: unknown) => void;
+    mocks.detail.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { top: this.classList.contains('comment-toolbar') ? 600 : 0 } as DOMRect;
+    });
+    const wrapper = mount(FeedDetailPage, { props: { feedId: '42' }, global: { stubs: { FeedCard: { template: '<div><div class="comment-toolbar">评论</div></div>' } } } });
+    try {
+      (wrapper.element as HTMLElement).scrollTop = 200;
+      await flushPromises();
+      expect((wrapper.element as HTMLElement).scrollTop).toBe(scrollTo === 'top' ? 0 : 800);
+      (wrapper.element as HTMLElement).scrollTop = 350;
+      finish({ data: { id: '42', uid: '1', username: '作者', message: '完整正文' } });
+      await flushPromises();
+      expect((wrapper.element as HTMLElement).scrollTop).toBe(350);
+    } finally { wrapper.unmount(); rect.mockRestore(); }
+  });
+  it.each(['top', 'comments'])('重新激活缓存详情仍按 %s 入口定位', async scrollTo => {
+    mocks.query = { scrollTo };
+    mocks.context.mockReturnValue({ id: '42', uid: '1', username: '作者', message: '正文' });
+    mocks.detail.mockResolvedValue({ data: { id: '42', uid: '1', username: '作者', message: '正文' } });
+    const visible = ref(true);
+    const host = defineComponent({ components: { FeedDetailPage }, setup: () => ({ visible }), template: '<KeepAlive><FeedDetailPage v-if="visible" feed-id="42" /></KeepAlive>' });
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const page = this.closest('.feed-detail-page') as HTMLElement | null;
+      return { top: this.classList.contains('comment-toolbar') ? 600 - (page?.scrollTop || 0) : 0 } as DOMRect;
+    });
+    const wrapper = mount(host, { global: { stubs: { FeedCard: { template: '<div><div class="comment-toolbar">评论</div></div>' } } } });
+    try {
+      await flushPromises();
+      const page = wrapper.get('.feed-detail-page').element as HTMLElement;
+      expect(page.scrollTop).toBe(scrollTo === 'top' ? 0 : 600);
+      page.scrollTop = 350;
+      visible.value = false;
+      await flushPromises();
+      visible.value = true;
+      await flushPromises();
+      expect(page.scrollTop).toBe(scrollTo === 'top' ? 0 : 600);
+    } finally { wrapper.unmount(); rect.mockRestore(); }
   });
   it('加载中和失败时仍可返回，直接打开时退回首页', async () => {
     let fail!: (error: Error) => void;

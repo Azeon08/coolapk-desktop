@@ -1,7 +1,7 @@
 <template>
   <div class="feed-detail-page custom-scrollbar" :class="{ 'is-official-mobile': officialMobileDetail, 'is-split': showSplit, 'no-image-detail-enabled': detailImagesEnabled, 'reading-actions-hidden': detailReading.hidden.value }" @scroll.capture="detailReading.onScroll" @wheel.capture.passive="detailReading.onWheel" @touchstart.capture.passive="detailReading.onTouchStart" @touchmove.capture.passive="detailReading.onTouchMove">
     <button v-if="officialMobileDetail && (!feedDetail || isAnswerDetail)" type="button" aria-label="返回" class="detail-fallback-back" @click="navigateBack(router)"><i class="fas fa-arrow-left"></i> 返回</button>
-    <div class="feed-detail-shell">
+    <div ref="detailShellRef" class="feed-detail-shell" :class="{ 'enter-at-comments': entryPosition === 'comments' }">
       <LoadingState v-if="loading && !feedDetail" text="正在加载原动态..." />
       <ErrorState
         v-else-if="error && !feedDetail"
@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onActivated, onDeactivated, onMounted, provide, ref, watch } from 'vue';
+import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { navigateBack } from '../utils/navigation';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -77,11 +77,13 @@ const settingsStore = useSettingsStore();
 const officialMobileDetail = useOfficialMobileFeedDetail();
 // 详情底栏沿用阅读导航设置；缓存页面和搜索、发布、大图浮层期间恢复状态。
 const detailActive = ref(true);
+const detailShellRef = ref<HTMLElement | null>(null);
+let entryPositionApplied = false;
 const detailVisible = inject(feedPageVisibleKey, ref(true));
 const detailReading = useMobileReadingNavigation(computed(() => officialMobileDetail.value && detailActive.value && detailVisible.value
   && settingsStore.settings.autoHideMobileNavigation && !appStore.isSearchOpen && !appStore.isPublishOpen && !appStore.activeImageViewer), '.feed-detail-page.is-official-mobile');
 provide(mobileDetailActionsHiddenKey, detailReading.hidden);
-onActivated(() => { detailActive.value = true; });
+onActivated(() => { detailActive.value = true; entryPositionApplied = false; void applyEntryPosition(); });
 onDeactivated(() => { detailActive.value = false; });
 // 注意：判据用 `mobileLayout`（纯布局）而不是 `officialMobileDetail`。
 // 后者是「布局 × officialMobileFeedDetail 开关」的合取 —— 用户关掉那个开关后，
@@ -145,6 +147,32 @@ const loading = ref(Boolean(feedId.value));
 const error = ref('');
 let requestVersion = 0;
 
+const entryPosition = computed(() => {
+  if (String(route.params.id || route.params.feedId || '') !== feedId.value || targetReplyId.value) return '';
+  return ['top', 'comments'].includes(String(route.query.scrollTo || '')) ? String(route.query.scrollTo) : '';
+});
+
+async function applyEntryPosition() {
+  const position = entryPosition.value;
+  if (!position || entryPositionApplied || !detailActive.value || !feedDetail.value) return;
+  await nextTick();
+  if (position !== entryPosition.value || !detailActive.value || entryPositionApplied) return;
+  const page = detailShellRef.value?.parentElement;
+  if (!page) return;
+  if (position === 'comments') {
+    const comments = detailShellRef.value?.querySelector<HTMLElement>('.comment-toolbar');
+    if (!comments) return;
+    page.scrollTop += comments.getBoundingClientRect().top - page.getBoundingClientRect().top;
+  } else {
+    page.scrollTop = 0;
+  }
+  entryPositionApplied = true;
+  detailReading.reset();
+}
+
+watch(entryPosition, () => { entryPositionApplied = false; });
+watch([entryPosition, feedDetail, loading], () => { void applyEntryPosition(); }, { flush: 'post' });
+
 async function fetchDetail() {
   if (!feedId.value) return;
   const requestedFeedId = feedId.value;
@@ -168,10 +196,12 @@ async function fetchDetail() {
 }
 
 onMounted(() => {
+  void applyEntryPosition();
   void fetchDetail();
 });
 
 watch(feedId, (nextFeedId) => {
+  entryPositionApplied = false;
   detailReading.reset();
   feedDetail.value = normalizeContextFeed(appStore.getFeedDetailContext(nextFeedId));
   error.value = '';
@@ -209,6 +239,11 @@ watch(feedId, (nextFeedId) => {
   max-width: 100%;
   margin: 0;
   padding: 0 0 32px;
+}
+
+/* 评论很少或仍在加载时也留出定位空间，避免滚动范围不足而停在正文中间。 */
+.feed-detail-shell.enter-at-comments :deep(.inline-comment-wrapper) {
+  min-height: var(--app-viewport-height, 100dvh);
 }
 
 /* 分栏模式：滚动收进左右两栏，页面自身不再滚动。

@@ -29,6 +29,21 @@ vi.mock('../../api/coolapk', () => ({
 import FollowingPage from '../FollowingPage.vue';
 import { useAuthStore } from '../../stores/auth';
 
+function mountFollowingPage() {
+  return mount(FollowingPage, {
+    global: {
+      stubs: {
+        AppAvatar: true,
+        AppButton: true,
+        EmptyState: true,
+        FeedCard: true,
+        LoadingState: true,
+        MoreDataPage: true,
+      },
+    },
+  });
+}
+
 describe('关注页账号 UID', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -61,6 +76,55 @@ describe('关注页账号 UID', () => {
     await wrapper.findAll('.sidebar-tab-btn')[1]!.trigger('click');
     await flushPromises();
     expect(mocks.getFansList).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it.each(['users', 'fans'])('%s 列表的头像、昵称、简介、空白处和箭头均进入对方主页', async tab => {
+    useAuthStore().user = { uid: '100', username: '自己' } as any;
+    mocks.getFollowUserList.mockResolvedValue({ data: [{ uid: '100', fuid: '200', fusername: '关注酷友', bio: '简介' }] });
+    mocks.getFansList.mockResolvedValue({ data: [{ uid: '300', fuid: '100', username: '粉丝酷友', bio: '简介' }] });
+    const wrapper = mountFollowingPage();
+    await flushPromises();
+    if (tab === 'fans') {
+      await wrapper.findAll('.sidebar-tab-btn')[1]!.trigger('click');
+      await flushPromises();
+    }
+    const row = wrapper.get('.sidebar-user-item[role="link"]');
+    const expectedPath = tab === 'fans' ? '/user/300' : '/user/200';
+    for (const selector of ['app-avatar-stub', '.user-item-name', '.user-item-desc', '.user-profile-btn']) {
+      mocks.push.mockClear();
+      await row.get(selector).trigger('click');
+      expect(mocks.push).toHaveBeenCalledExactlyOnceWith(expectedPath);
+    }
+    mocks.push.mockClear();
+    await row.trigger('click');
+    expect(mocks.push).toHaveBeenCalledExactlyOnceWith(expectedPath);
+    mocks.push.mockClear();
+    await row.trigger('keydown', { key: 'Enter' });
+    expect(mocks.push).toHaveBeenCalledExactlyOnceWith(expectedPath);
+    expect(mocks.getUserFeeds).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('独立的看动态按钮只筛选动态，全部动态可清除筛选', async () => {
+    useAuthStore().user = { uid: '100', username: '自己' } as any;
+    mocks.getFollowUserList.mockResolvedValue({ data: [{ uid: '100', fuid: '200', fusername: '关注酷友' }] });
+    const wrapper = mountFollowingPage();
+    await flushPromises();
+    const button = wrapper.get('.user-feed-btn');
+    await button.trigger('keydown', { key: 'Enter' });
+    expect(mocks.push).not.toHaveBeenCalled();
+    await button.trigger('click');
+    await flushPromises();
+    expect(mocks.getUserFeeds).toHaveBeenCalledExactlyOnceWith('200', 1, 'feed');
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(button.attributes('aria-pressed')).toBe('true');
+    expect(wrapper.get('.user-filter-bar').text()).toContain('关注酷友');
+    mocks.getFollowingFeeds.mockClear();
+    await wrapper.get('.sidebar-user-item:not([role])').trigger('click');
+    await flushPromises();
+    expect(mocks.getFollowingFeeds).toHaveBeenCalledExactlyOnceWith(1);
+    expect(wrapper.find('.user-filter-bar').exists()).toBe(false);
     wrapper.unmount();
   });
 });

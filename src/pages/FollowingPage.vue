@@ -132,7 +132,10 @@
               v-for="u in filteredUsers"
               :key="getTargetUid(u)"
               :class="['sidebar-user-item', { active: String(selectedUid) === String(getTargetUid(u)) }]"
-              @click="selectUserFilter(getTargetUid(u))"
+              role="link"
+              tabindex="0"
+              @click="navigateToUser(getTargetUid(u))"
+              @keydown.enter.self.prevent="navigateToUser(getTargetUid(u))"
             >
               <AppAvatar
                 :src="u.userInfo?.userAvatar || u.fUserInfo?.userAvatar || u.fUserAvatar || u.userAvatar || u.avatar"
@@ -143,6 +146,14 @@
                 <span class="user-item-name">{{ u.userInfo?.username || u.fUserInfo?.username || u.displayUsername || u.fusername || u.username || '酷友' }}</span>
                 <span v-if="relationUserBio(u, sidebarTab === 'fans' ? 'fans' : 'follow')" class="user-item-desc">{{ relationUserBio(u, sidebarTab === 'fans' ? 'fans' : 'follow') }}</span>
               </div>
+              <button
+                type="button"
+                class="user-feed-btn"
+                :aria-pressed="String(selectedUid) === String(getTargetUid(u))"
+                @click.stop="selectUserFilter(getTargetUid(u))"
+              >
+                看动态
+              </button>
               <button
                 class="user-profile-btn"
                 title="进入酷友主页"
@@ -766,6 +777,22 @@ onUnmounted(unbindGlobalListeners);
 
 .user-profile-btn:hover {
   color: var(--brand-primary);
+}
+
+.user-feed-btn {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--brand-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.user-feed-btn:hover,
+.user-feed-btn[aria-pressed="true"] {
+  background: var(--brand-soft);
 }
 
 .login-guide-wrapper {

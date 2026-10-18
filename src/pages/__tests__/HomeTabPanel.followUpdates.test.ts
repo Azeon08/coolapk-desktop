@@ -1,0 +1,39 @@
+import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import { expect, it, vi } from 'vitest';
+import HomeTabPanel from '../HomeTabPanel.vue';
+import { useAuthStore } from '../../stores/auth';
+
+const api = vi.hoisted(() => ({
+  getFollowingFeeds: vi.fn(),
+  getDiscoveryPageData: vi.fn().mockResolvedValue({ data: [] }),
+  getHotSearchKeywords: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../../api/coolapk', () => ({ CoolapkTauriAPI: api }));
+
+it.each([390, 1280])('宽度 %s 的首页全部关注展示更新名单，其他分组不混入', async width => {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(width);
+  api.getFollowingFeeds.mockResolvedValue({ data: [{ id: 1, entityType: 'feed', message: '新动态', uid: '200', username: '关注酷友', dateline: Math.floor(Date.now() / 1000) }] });
+  const pinia = createPinia();
+  useAuthStore(pinia).isLoggedIn = true;
+  useAuthStore(pinia).user = { uid: '100', username: '自己' } as any;
+  const tab = { title: '关注', page_name: 'V15_HOME_TAB_FOLLOW', url: 'V15_HOME_TAB_FOLLOW' };
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] });
+  await router.push('/');
+  const wrapper = mount(HomeTabPanel, {
+    props: { embedded: true, selected: true, tabKey: tab.page_name, tabs: [tab] },
+    global: { plugins: [router, pinia], stubs: { FeedCard: true, FeedVideoCard: true, AppAvatar: true, AppImage: true } },
+  });
+  try {
+    await flushPromises();
+    expect(wrapper.get('.updated-follow-users').text()).toContain('关注酷友');
+    const channels = wrapper.findAll('.follow-subchannel-item');
+    await channels[2]!.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.updated-follow-users').exists()).toBe(false);
+    await channels[0]!.trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.updated-follow-users').text()).toContain('关注酷友');
+  } finally { wrapper.unmount(); vi.restoreAllMocks(); }
+});

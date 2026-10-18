@@ -127,4 +127,22 @@ describe('关注页账号 UID', () => {
     expect(wrapper.find('.user-filter-bar').exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it('关注更新名单在查看粉丝动态时保留，且不混入该粉丝', async () => {
+    useAuthStore().user = { uid: '100', username: '自己' } as any;
+    const dateline = Math.floor(Date.now() / 1000);
+    mocks.getFollowingFeeds.mockResolvedValue({ data: [{ id: 1, uid: '200', username: '有更新的关注酷友', dateline }] });
+    mocks.getFansList.mockResolvedValue({ data: [{ uid: '300', fuid: '100', username: '粉丝酷友' }] });
+    mocks.getUserFeeds.mockResolvedValue({ data: [{ id: 2, uid: '300', username: '粉丝酷友', dateline }] });
+    const wrapper = mountFollowingPage();
+    await flushPromises();
+    expect(wrapper.get('.updated-follow-users').text()).toContain('有更新的关注酷友');
+    await wrapper.findAll('.sidebar-tab-btn')[1]!.trigger('click');
+    await flushPromises();
+    await wrapper.get('.user-feed-btn').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('.updated-follow-users').text()).toContain('有更新的关注酷友');
+    expect(wrapper.get('.updated-follow-users').text()).not.toContain('粉丝酷友');
+    wrapper.unmount();
+  });
 });

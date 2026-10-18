@@ -28,6 +28,8 @@
         </button>
       </nav>
 
+      <UpdatedFollowUsers v-if="selectedFollowCategory === 'feeds'" :feeds="followingUpdateFeeds" />
+
       <div v-if="selectedFollowCategory !== 'feeds'" class="following-category-panel">
         <MoreDataPage :key="selectedFollowCategory" :mode="selectedFollowCategory" />
       </div>
@@ -178,6 +180,7 @@ import { useAuthStore } from '../stores/auth';
 import { useSettingsStore } from '../stores/settings';
 import { shouldHideFeed } from '../utils/feedFilter';
 import FeedCard from '../components/feed/FeedCard.vue';
+import UpdatedFollowUsers from '../components/feed/UpdatedFollowUsers.vue';
 import AppAvatar from '../components/common/AppAvatar.vue';
 import AppButton from '../components/common/AppButton.vue';
 import LoadingState from '../components/common/LoadingState.vue';
@@ -224,6 +227,8 @@ const loading = ref(false);
 const usersLoading = ref(false);
 const fansLoading = ref(false);
 const feeds = ref<any[]>([]);
+// 单个酷友筛选不覆盖关注动态汇总，避免将粉丝的动态混入更新名单。
+const followingUpdateFeeds = ref<any[]>([]);
 const users = ref<any[]>([]);
 const fansUsers = ref<any[]>([]);
 const selectedUid = ref<string | null>(null);
@@ -298,6 +303,7 @@ const noMore = ref(false);
 
 async function loadFollowingFeeds(isRefresh: boolean = false) {
   if (loading.value || (loadingMore.value && !isRefresh)) return;
+  const requestedUid = selectedUid.value;
 
   if (isRefresh) {
     page.value = 1;
@@ -310,11 +316,18 @@ async function loadFollowingFeeds(isRefresh: boolean = false) {
   }
 
   try {
-    const res = selectedUid.value
-      ? await CoolapkTauriAPI.getUserFeeds(selectedUid.value, page.value, 'feed')
+    const res = requestedUid
+      ? await CoolapkTauriAPI.getUserFeeds(requestedUid, page.value, 'feed')
       : await CoolapkTauriAPI.getFollowingFeeds(page.value);
 
     const list = extractList(res).filter((i: any) => !shouldHideFeed(i, settingsStore.settings));
+    if (!requestedUid) {
+      if (isRefresh) followingUpdateFeeds.value = list;
+      else {
+        const existing = new Set(followingUpdateFeeds.value.map(item => String(item.id)));
+        followingUpdateFeeds.value.push(...list.filter(item => !existing.has(String(item.id))));
+      }
+    }
     if (list.length < 3) {
       noMore.value = true;
     }
@@ -465,6 +478,7 @@ const onRefreshFeeds = () => {
 
 function handleFeedDeleted(id: string | number) {
   feeds.value = feeds.value.filter((f: any) => String(f.id) !== String(id));
+  followingUpdateFeeds.value = followingUpdateFeeds.value.filter((f: any) => String(f.id) !== String(id));
 }
 
 function bindGlobalListeners() {

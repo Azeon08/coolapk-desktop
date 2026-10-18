@@ -43,6 +43,7 @@
         @pointerdown="handleFeedPointerDown"
         @click.capture="handleFeedClickCapture"
       >
+        <UpdatedFollowUsers v-if="isFollowingTab && (!selectedFollowSubChannel || isDefaultFollowSubChannel(selectedFollowSubChannel))" :feeds="feeds" />
         <!-- 1. 头条 Tab 专属：服务端要闻与动态子栏目 -->
         <div v-if="isHeadlineTab" class="headline-header-section">
           <!-- APK ConfigPage.rawEntities 动态下发的头条子栏目 -->
@@ -335,6 +336,7 @@ import { useRoute, useRouter } from 'vue-router';
 import FeedTabs from '../components/feed/FeedTabs.vue';
 import FeedLayoutToggle from '../components/feed/FeedLayoutToggle.vue';
 import FeedCard from '../components/feed/FeedCard.vue';
+import UpdatedFollowUsers from '../components/feed/UpdatedFollowUsers.vue';
 import RatingCard from '../components/feed/RatingCard.vue';
 import QuestionAnswerCard from '../components/question/QuestionAnswerCard.vue';
 import QuestionFeedCard from '../components/question/QuestionFeedCard.vue';

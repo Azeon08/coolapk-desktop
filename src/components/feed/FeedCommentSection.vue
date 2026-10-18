@@ -248,6 +248,7 @@
               <i class="fa-solid fa-user-pen"></i> 楼主
             </span>
             <span v-else-if="authorOnly && c.authorOnlyContext" class="author-filter-context-label">上下文</span>
+            <span v-if="!isAuthor(c) && isOwn(c)" class="badge-identity">我</span>
 
             <span v-if="getCommentUserLevel(c)" class="level-tag">LV{{ getCommentUserLevel(c) }}</span>
             <span v-if="getCommentVerifyTitle(c)" class="verify-tag" :title="getCommentVerifyTitle(c)">
@@ -369,6 +370,7 @@
                     <span class="sub-user" @click.stop="openCommentUser(sub)">{{ sub.username || sub.fromUserName || '酷友' }}</span>
                   </UserHoverCard>
                   <span v-if="isAuthor(sub)" class="badge-author sub-badge">楼主</span>
+                  <span v-if="!isAuthor(sub) && isOwn(sub)" class="badge-identity sub-badge">我</span>
                   <span v-if="getCommentUserLevel(sub)" class="level-tag">LV{{ getCommentUserLevel(sub) }}</span>
                   <span v-if="getCommentVerifyTitle(sub)" class="verify-tag" :title="getCommentVerifyTitle(sub)">
                     <i class="fa-solid fa-circle-check"></i>
@@ -919,10 +921,14 @@ function hasCommentDetails(item: any): boolean {
   );
 }
 
-const myUid = computed(() => (authStore.isLoggedIn ? String(authStore.user?.uid ?? '') : ''));
+const myUid = computed(() => (authStore.isLoggedIn ? String(authStore.user?.uid ?? '').trim() : ''));
+
+function getCommentUid(item: any): string {
+  return String(item?.uid || item?.fromUid || item?.userId || item?.userInfo?.uid || item?.user_info?.uid || '').trim();
+}
 
 function isOwn(item: any): boolean {
-  const uid = String(item?.uid ?? item?.userInfo?.uid ?? '');
+  const uid = getCommentUid(item);
   return !!uid && !!myUid.value && uid === myUid.value;
 }
 
@@ -1168,7 +1174,8 @@ function hasExplicitSubReplyMore(floor: any): boolean {
 }
 
 function mergeSubReplyRows(embedded: any[], fetched: any[]): any[] {
-  return mergeReplies(embedded, fetched).map(mergeReplyDetail);
+  // APK 的会话列表沿用 replyList 顺序。完整分页优先，尚未取到的预览仅补在末尾。
+  return mergeReplies(fetched, embedded).map(mergeReplyDetail);
 }
 
 function getSubReplyRows(floor: any): any[] {
@@ -1541,7 +1548,7 @@ async function updateRepliedFloor(feedId: string, replyId: string, returnedReply
     const state = ensureSubReplyState(floor);
     if (!state) return;
     // 成功返回的回复直接追加；接口未返回回复内容时，仅补取当前楼层第一页。
-    updateSubReplyState(floorId, { items: mergeSubReplyRows(state.items, rows) });
+    updateSubReplyState(floorId, { items: mergeReplies(state.items, rows).map(mergeReplyDetail) });
     expandedFloorIds.value = new Set([...expandedFloorIds.value, floorId]);
   } catch (error) {
     logDiagnostic('warn', 'comment', 'reply_floor_refresh_failed', summarizeDiagnosticError(error));
@@ -1664,14 +1671,14 @@ function handleSubReplyClick(e: MouseEvent, sub: any, floor: any) {
 function isAuthor(commentItem: any) {
   const authorUid = String(props.feedUid || '');
   const authorName = String(props.feedUsername || '');
-  const itemUid = String(commentItem.uid || commentItem.fromUid || commentItem.userId || commentItem.userInfo?.uid || '');
+  const itemUid = getCommentUid(commentItem);
   const itemName = String(commentItem.username || commentItem.userInfo?.username || '');
 
-  if (commentItem.isAuthor || commentItem.is_author === 1 || commentItem.isFeedAuthor) {
+  if ([commentItem.isAuthor, commentItem.is_author, commentItem.isFeedAuthor].some(value => Number(value) === 1)) {
     return true;
   }
 
-  if (authorUid && itemUid && authorUid === itemUid) return true;
+  if (authorUid && itemUid) return authorUid === itemUid;
   if (authorName && itemName && authorName === itemName) return true;
   return false;
 }
@@ -2546,6 +2553,24 @@ async function handleSend() {
   font-size: 0.65rem;
   padding: 0 4px;
   margin-right: 4px;
+}
+
+.badge-identity {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  color: var(--brand-primary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.badge-identity.sub-badge {
+  padding: 0 4px;
+  font-size: 0.65rem;
 }
 
 .level-tag {

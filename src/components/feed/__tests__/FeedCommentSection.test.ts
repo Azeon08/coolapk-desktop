@@ -427,6 +427,65 @@ describe('评论完整信息展示', () => {
     expect(wrapper.text()).toContain('远程内容23');
   });
 
+  it.each([false, true])('officialDetail=%s 时展开和翻页沿用完整接口顺序，不把预览置顶或按时间重排', async officialDetail => {
+    const reply = (id: number) => ({ id: String(id), username: `酷友${id}`, message: `内容${id}`, dateline: id * 100 });
+    mocks.getSubReplies
+      .mockResolvedValueOnce({ data: [reply(2), reply(1)] })
+      .mockResolvedValueOnce({ data: [reply(3), reply(4)] });
+    const wrapper = mountSection({
+      id: 'floor-order', replyRows: [reply(3), reply(1)], replynum: 4, replyRowsMore: 1,
+    }, { officialDetail, defaultSortMode: 'latest' });
+    const order = () => wrapper.findAll('.sub-reply-row .sub-user').map(row => row.text());
+    try {
+      expect(order()).toEqual(['酷友3', '酷友1']);
+      await wrapper.get('.sub-more-btn').trigger('click');
+      await flushPromises();
+      expect(order()).toEqual(['酷友2', '酷友1', '酷友3']);
+      const more = wrapper.findAll('.sub-more-btn').find(button => button.text().includes('加载更多楼中楼'));
+      await more!.trigger('click');
+      await flushPromises();
+      expect(mocks.getSubReplies).toHaveBeenLastCalledWith('feed-1', 'floor-order', 2, { lastItem: '1' });
+      expect(order()).toEqual(['酷友2', '酷友1', '酷友3', '酷友4']);
+    } finally { wrapper.unmount(); }
+  });
+
+  it.each([false, true])('officialDetail=%s 时按 APK 显示楼主和我，不添加层主标记', async officialDetail => {
+    const auth = useAuthStore();
+    auth.isLoggedIn = true;
+    auth.user = { uid: '123', username: '本人' } as any;
+    const wrapper = mountSection({ uid: '123', replyRows: [
+      { id: 'self', fromUid: '123', fromUserName: '本人', message: '自己的回复', isFeedAuthor: '0' },
+      { id: 'author', uid: '999', username: '作者', message: '楼主回复', isFeedAuthor: 1 },
+      { id: 'other', userInfo: { uid: '456' }, username: '作者', message: '其他酷友', isAuthor: '0' },
+    ] }, { officialDetail, feedUid: '999', feedUsername: '作者' });
+    try {
+      expect(wrapper.get('.comment-meta .badge-identity').text()).toBe('我');
+      const rows = wrapper.findAll('.sub-reply-row');
+      expect(rows[0]!.get('.badge-identity').text()).toBe('我');
+      expect(rows[1]!.get('.badge-author').text()).toBe('楼主');
+      expect(rows[1]!.find('.badge-identity').exists()).toBe(false);
+      expect(rows[2]!.find('.badge-author').exists()).toBe(false);
+      expect(rows[2]!.find('.badge-identity').exists()).toBe(false);
+      expect(wrapper.text()).not.toContain('层主');
+      auth.isLoggedIn = false;
+      await flushPromises();
+      expect(wrapper.find('.badge-identity').exists()).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('本人是楼主时沿用 APK 的身份优先级，只显示楼主', () => {
+    const auth = useAuthStore();
+    auth.isLoggedIn = true;
+    auth.user = { uid: '999', username: '本人' } as any;
+    const wrapper = mountSection({ uid: '999', replyRows: [
+      { id: 'self-author', userInfo: { uid: '999' }, username: '本人', message: '回复' },
+    ] }, { feedUid: '999' });
+    try {
+      expect(wrapper.findAll('.badge-author')).toHaveLength(2);
+      expect(wrapper.find('.badge-identity').exists()).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
   it('楼中楼分页返回重复数据时停止继续请求，不反复卡在加载状态', async () => {
     mocks.getSubReplies.mockResolvedValue({
       code: 200,

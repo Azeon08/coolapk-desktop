@@ -131,7 +131,7 @@ describe('关注页账号 UID', () => {
   it('关注更新名单在查看粉丝动态时保留，且不混入该粉丝', async () => {
     useAuthStore().user = { uid: '100', username: '自己' } as any;
     const dateline = Math.floor(Date.now() / 1000);
-    mocks.getFollowingFeeds.mockResolvedValue({ data: [{ id: 1, uid: '200', username: '有更新的关注酷友', dateline }] });
+    mocks.getFollowingFeeds.mockResolvedValue({ data: [{ entityType: 'card', entityTemplate: 'iconScrollCard', url: '/user/recentUpdateList', entities: [{ entityType: 'user', uid: '200', username: '有更新的关注酷友', url: '/u/200' }] }, { id: 1, uid: '200', username: '有更新的关注酷友', dateline }] });
     mocks.getFansList.mockResolvedValue({ data: [{ uid: '300', fuid: '100', username: '粉丝酷友' }] });
     mocks.getUserFeeds.mockResolvedValue({ data: [{ id: 2, uid: '300', username: '粉丝酷友', dateline }] });
     const wrapper = mountFollowingPage();

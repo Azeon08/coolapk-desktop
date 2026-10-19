@@ -14,7 +14,7 @@ vi.mock('../../api/coolapk', () => ({ CoolapkTauriAPI: api }));
 
 it.each([390, 1280])('宽度 %s 的首页全部关注展示更新名单，其他分组不混入', async width => {
   vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(width);
-  api.getFollowingFeeds.mockResolvedValue({ data: [{ id: 1, entityType: 'feed', message: '新动态', uid: '200', username: '关注酷友', dateline: Math.floor(Date.now() / 1000) }] });
+  api.getFollowingFeeds.mockResolvedValue({ data: [{ entityType: 'card', entityTemplate: 'iconScrollCard', url: '/user/recentUpdateList', entities: [{ entityType: 'user', uid: '200', username: '关注酷友', url: '/u/200' }] }, { id: 1, entityType: 'feed', message: '新动态', uid: '200', username: '关注酷友', dateline: Math.floor(Date.now() / 1000) }] });
   const pinia = createPinia();
   useAuthStore(pinia).isLoggedIn = true;
   useAuthStore(pinia).user = { uid: '100', username: '自己' } as any;
@@ -28,6 +28,13 @@ it.each([390, 1280])('宽度 %s 的首页全部关注展示更新名单，其他
   try {
     await flushPromises();
     expect(wrapper.get('.updated-follow-users').text()).toContain('关注酷友');
+    await wrapper.get('.updates-toggle').trigger('click');
+    expect(wrapper.find('.updated-follow-users').exists()).toBe(false);
+    expect(wrapper.find('.updates-collapsed-entry').exists()).toBe(false);
+    expect(wrapper.find('.follow-subchannel-bar .follow-updates-expand').exists()).toBe(true);
+    await wrapper.get('.follow-updates-expand').trigger('click');
+    expect(wrapper.get('.updated-follow-users').text()).toContain('关注酷友');
+    expect(wrapper.find('.follow-updates-expand').exists()).toBe(false);
     const channels = wrapper.findAll('.follow-subchannel-item');
     await channels[2]!.trigger('click');
     await flushPromises();

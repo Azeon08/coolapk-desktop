@@ -46,3 +46,14 @@ describe('官方发现卡片模板', () => {
     w.unmount();
   });
 });
+
+it('最近更新用户实体显示头像昵称并保留原始导航', async () => {
+  const entity = { entityType: 'user', uid: '20', username: '关注酷友', userAvatar: 'avatar', subTitle: '最新动态', url: '/u/20' };
+  const wrapper = shallowMount(DiscoveryEntityCard, { props: { entity } });
+  expect(wrapper.get('.discovery-user-row').text()).toContain('关注酷友');
+  expect(wrapper.get('.discovery-user-row').text()).toContain('最新动态');
+  expect(wrapper.findComponent({ name: 'FeedCard' }).exists()).toBe(false);
+  await wrapper.get('.discovery-user-row').trigger('click');
+  expect(wrapper.emitted('open')?.[0]).toEqual([entity]);
+  wrapper.unmount();
+});

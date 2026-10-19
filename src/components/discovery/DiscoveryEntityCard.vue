@@ -8,6 +8,13 @@
     <FeedCard :feed="entity as any" :max-lines="compact ? 6 : undefined" @deleted="emitDeleted" />
   </div>
 
+  <!-- 用户列表实体不属于动态：保留头像、昵称和简介，点击沿用服务端导航。 -->
+  <button v-else-if="entity.entityType === 'user'" type="button" class="discovery-user-row" @click="emitOpen">
+    <AppAvatar :src="entity.userAvatar || entity.userInfo?.userAvatar" :plugin-url="entity.avatar_plugin_url || entity.userInfo?.avatar_plugin_url" :size="48" />
+    <span class="discovery-user-copy"><strong>{{ entity.displayUsername || entity.username || entity.userInfo?.username || title }}</strong><small v-if="subtitle || text">{{ subtitle || text }}</small></span>
+    <i class="fas fa-chevron-right discovery-card-arrow" aria-hidden="true"></i>
+  </button>
+
   <LiveCard v-else-if="isLive" :entity="entity" :compact="compact" />
 
   <section v-else-if="templateName.includes('imagesquarescrollcard')" class="discovery-square-links" data-discovery-horizontal-scroll>
@@ -281,6 +288,7 @@ import { renderCoolapkRichText } from '../../utils/richText';
 import { handleAnchorClick } from '../../utils/anchorClick';
 import { isGoodsRankingEntity } from '../../utils/goodsRanking';
 import AppImage from '../common/AppImage.vue';
+import AppAvatar from '../common/AppAvatar.vue';
 import DigitalProductCard from '../digital/DigitalProductCard.vue';
 import TopicCard from '../topic/TopicCard.vue';
 import LiveCard from './LiveCard.vue';
@@ -498,6 +506,12 @@ async function toggleDyhFollow() {
 </script>
 
 <style scoped>
+.discovery-user-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--border-light); background: var(--surface); color: var(--text-primary); text-align: left; cursor: pointer; }
+.discovery-user-row:hover { background: var(--surface-hover); }
+.discovery-user-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.discovery-user-copy strong, .discovery-user-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discovery-user-copy small { color: var(--text-secondary); }
+
 .discovery-entity-group,
 .discovery-product-group,
 .discovery-image-card,

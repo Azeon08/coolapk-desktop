@@ -38,6 +38,9 @@ export interface DiscoveryEntity {
   uid?: string | number;
   username?: string;
   userAvatar?: string;
+  avatar_plugin_url?: string;
+  // 用户列表既可能平铺作者信息，也可能嵌套在 userInfo 中。
+  userInfo?: { username?: string; userAvatar?: string; avatar_plugin_url?: string; [key: string]: unknown };
   dateline?: number | string;
   entities?: DiscoveryEntity[];
   extraData?: unknown;

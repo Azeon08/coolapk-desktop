@@ -1956,3 +1956,29 @@ fn test_native_device_profile_survives_settings_sync_and_custom_reset() {
     client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
     verify(native_ua, "; Apple; Apple; iPhone17,3; 22A3354;");
 }
+
+// 关注流需要保留官方卡片，不能把内部酷友实体清洗成动态。
+#[test]
+fn following_list_preserves_official_icon_card() {
+    let card = serde_json::json!({ "entityType": "card", "entityTemplate": "iconScrollCard", "url": "/user/recentUpdateList", "entities": [{ "entityType": "user", "uid": "20", "username": "酷友", "url": "/u/20" }] });
+    let raw = serde_json::json!({ "data": [card.clone(), { "entityType": "feed", "id": "123", "uid": "30", "username": "作者", "message": "动态" }] });
+    let rows = CoolapkClient::extract_following_list(&raw);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0], card);
+    assert_eq!(rows[1]["id"], "123");
+}
+
+// 官方页面仅下发头像栏时必须继续回退，同时保留原始入口与用户顺序。
+#[test]
+fn following_card_only_page_does_not_stop_feed_fallback() {
+    let card = json!({ "entityType": "card", "entityTemplate": "iconScrollCard", "url": "/user/recentUpdateList", "entities": [{ "entityType": "user", "uid": "20", "username": "酷友" }] });
+    let mut rows = Vec::new();
+    assert!(!CoolapkClient::merge_following_page(&mut rows, &json!({ "data": [card.clone()] })));
+    assert!(!CoolapkClient::merge_following_page(&mut rows, &json!({ "data": [] })));
+    assert_eq!(rows, vec![card.clone()]);
+    let fallback = json!({ "data": [card.clone(), { "entityType": "feed", "id": "123", "uid": "30", "username": "作者", "message": "动态" }] });
+    assert!(CoolapkClient::merge_following_page(&mut rows, &fallback));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0], card);
+    assert_eq!(rows[1]["id"], "123");
+}

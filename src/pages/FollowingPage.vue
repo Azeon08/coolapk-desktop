@@ -26,9 +26,10 @@
           <i :class="category.icon"></i>
           {{ category.label }}
         </button>
+        <button v-if="selectedFollowCategory === 'feeds' && updatedFollowUsers?.available && updatedFollowUsers.collapsed" type="button" class="follow-updates-expand" aria-label="展开最近更新酷友" title="展开最近更新酷友" @click="updatedFollowUsers.expand()"><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
       </nav>
 
-      <UpdatedFollowUsers v-if="selectedFollowCategory === 'feeds'" :feeds="followingUpdateFeeds" />
+      <UpdatedFollowUsers ref="updatedFollowUsers" v-if="selectedFollowCategory === 'feeds'" :feeds="followingUpdateFeeds" />
 
       <div v-if="selectedFollowCategory !== 'feeds'" class="following-category-panel">
         <MoreDataPage :key="selectedFollowCategory" :mode="selectedFollowCategory" />
@@ -181,6 +182,7 @@ import { useSettingsStore } from '../stores/settings';
 import { shouldHideFeed } from '../utils/feedFilter';
 import FeedCard from '../components/feed/FeedCard.vue';
 import UpdatedFollowUsers from '../components/feed/UpdatedFollowUsers.vue';
+import { isFollowUpdateCard } from '../utils/followUpdates';
 import AppAvatar from '../components/common/AppAvatar.vue';
 import AppButton from '../components/common/AppButton.vue';
 import LoadingState from '../components/common/LoadingState.vue';
@@ -229,6 +231,7 @@ const fansLoading = ref(false);
 const feeds = ref<any[]>([]);
 // 单个酷友筛选不覆盖关注动态汇总，避免将粉丝的动态混入更新名单。
 const followingUpdateFeeds = ref<any[]>([]);
+const updatedFollowUsers = ref<InstanceType<typeof UpdatedFollowUsers> | null>(null);
 const users = ref<any[]>([]);
 const fansUsers = ref<any[]>([]);
 const selectedUid = ref<string | null>(null);
@@ -320,14 +323,10 @@ async function loadFollowingFeeds(isRefresh: boolean = false) {
       ? await CoolapkTauriAPI.getUserFeeds(requestedUid, page.value, 'feed')
       : await CoolapkTauriAPI.getFollowingFeeds(page.value);
 
-    const list = extractList(res).filter((i: any) => !shouldHideFeed(i, settingsStore.settings));
-    if (!requestedUid) {
-      if (isRefresh) followingUpdateFeeds.value = list;
-      else {
-        const existing = new Set(followingUpdateFeeds.value.map(item => String(item.id)));
-        followingUpdateFeeds.value.push(...list.filter(item => !existing.has(String(item.id))));
-      }
-    }
+    const rawItems = extractList(res);
+    // 卡片使用官方原始实体，动态列表排除卡片以免生成空白动态。
+    const list = rawItems.filter((i: any) => !isFollowUpdateCard(i) && !shouldHideFeed(i, settingsStore.settings));
+    if (!requestedUid && (isRefresh || rawItems.some(isFollowUpdateCard))) followingUpdateFeeds.value = rawItems.filter(isFollowUpdateCard);
     if (list.length < 3) {
       noMore.value = true;
     }
@@ -505,6 +504,11 @@ onUnmounted(unbindGlobalListeners);
 </script>
 
 <style scoped>
+/* 利用现有分类栏恢复头像列表，不增加独立占位。 */
+.follow-updates-expand { display: flex; align-items: center; justify-content: center; flex: 0 0 32px; margin-left: auto; border: 0; border-radius: 8px; background: transparent; color: var(--text-tertiary); font-size: 11px; cursor: pointer; }
+.follow-updates-expand:hover { background: var(--surface-hover); color: var(--text-secondary); }
+.follow-updates-expand:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
 .page-container {
   width: 100%;
   max-width: 100%;

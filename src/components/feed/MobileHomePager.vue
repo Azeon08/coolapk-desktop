@@ -239,7 +239,10 @@ onUnmounted(() => { unbind(); stopObservingResize?.(); });
   .mobile-home-pager:not(.desktop-home-pager) .home-toolbar :deep(.feed-tabs-wrapper) { background: transparent; border-bottom: 0; }
   .mobile-home-pager:not(.desktop-home-pager) .home-toolbar :deep(.tab-manage-btn) { background: transparent; border-radius: 0; }
   .mobile-home-pager:not(.desktop-home-pager) :deep(.feed-scroll-container) { padding-top: calc(var(--mobile-glass-topbar-space, 0px) + 48px); scroll-padding-top: calc(var(--mobile-glass-topbar-space, 0px) + 48px); transition: padding-top 200ms ease; }
-  @media (prefers-reduced-motion: reduce) { .mobile-home-pager:not(.desktop-home-pager) .home-toolbar, .mobile-home-pager:not(.desktop-home-pager) :deep(.feed-scroll-container) { transition: none; } }
+  /* 关注子栏目位于滚动容器外，先为悬浮主栏目让位，动态区不再重复留白。 */
+  .mobile-home-pager:not(.desktop-home-pager) :deep(.has-follow-subchannels .main-feed-column) { box-sizing: border-box; padding-top: calc(var(--mobile-glass-topbar-space, 0px) + 48px); transition: padding-top 200ms ease; }
+  .mobile-home-pager:not(.desktop-home-pager) :deep(.has-follow-subchannels .feed-scroll-container) { padding-top: 0; scroll-padding-top: 0; }
+  @media (prefers-reduced-motion: reduce) { .mobile-home-pager:not(.desktop-home-pager) .home-toolbar, .mobile-home-pager:not(.desktop-home-pager) :deep(.feed-scroll-container), .mobile-home-pager:not(.desktop-home-pager) :deep(.has-follow-subchannels .main-feed-column) { transition: none; } }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .mobile-home-pager:not(.desktop-home-pager) .home-toolbar { background: var(--surface); } }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .mobile-home-pager:not(.desktop-home-pager) .home-toolbar { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; } }
 }

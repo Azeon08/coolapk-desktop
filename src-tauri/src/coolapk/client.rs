@@ -7014,7 +7014,38 @@ impl CoolapkClient {
         )
     }
 
+    // 官方关注页的横向入口卡片必须完整保留，不能按动态清洗或展开成推荐用户。
+    fn extract_following_list(raw: &Value) -> Vec<Value> {
+        let mut rows = Vec::new();
+        if let Some(items) = raw.get("data").and_then(Value::as_array) {
+            for item in items {
+                if item.get("entityTemplate").and_then(Value::as_str) == Some("iconScrollCard") {
+                    rows.push(item.clone());
+                } else {
+                    rows.extend(Self::extract_cleaned_list(&json!({ "data": [item] })));
+                }
+            }
+        }
+        rows
+    }
+
+    // 仅有官方头像栏不代表已经取得动态；保留首个卡片并继续原有接口回退。
+    fn merge_following_page(rows: &mut Vec<Value>, raw: &Value) -> bool {
+        let incoming = Self::extract_following_list(raw);
+        let mut has_feed = false;
+        for item in incoming {
+            if item.get("entityTemplate").and_then(Value::as_str) == Some("iconScrollCard") {
+                if !rows.iter().any(|row| row.get("entityTemplate").and_then(Value::as_str) == Some("iconScrollCard")) { rows.push(item); }
+            } else {
+                has_feed = true;
+                rows.push(item);
+            }
+        }
+        has_feed
+    }
+
     pub async fn get_following_feeds(&self, page: u32) -> Result<Value, String> {
+        let mut rows = Vec::new();
         // 1. APK 当前首页使用 V15_HOME_TAB_FOLLOW，优先走同一条动态接口。
         if let Ok(raw) = self
             .api_get(
@@ -7027,9 +7058,8 @@ impl CoolapkClient {
             )
             .await
         {
-            let cleaned = Self::extract_cleaned_list(&raw);
-            if !cleaned.is_empty() {
-                return Ok(json!({ "code": 200, "data": cleaned }));
+            if Self::merge_following_page(&mut rows, &raw) {
+                return Ok(json!({ "code": 200, "data": rows }));
             }
         }
 
@@ -7045,9 +7075,8 @@ impl CoolapkClient {
             )
             .await
         {
-            let cleaned = Self::extract_cleaned_list(&raw);
-            if !cleaned.is_empty() {
-                return Ok(json!({ "code": 200, "data": cleaned }));
+            if Self::merge_following_page(&mut rows, &raw) {
+                return Ok(json!({ "code": 200, "data": rows }));
             }
         }
 
@@ -7056,9 +7085,8 @@ impl CoolapkClient {
             .api_get("/v6/feed/followFeedList", &[("page", page.to_string())])
             .await
         {
-            let cleaned = Self::extract_cleaned_list(&raw);
-            if !cleaned.is_empty() {
-                return Ok(json!({ "code": 200, "data": cleaned }));
+            if Self::merge_following_page(&mut rows, &raw) {
+                return Ok(json!({ "code": 200, "data": rows }));
             }
         }
 
@@ -7069,7 +7097,8 @@ impl CoolapkClient {
                 &[("type", "follow".to_string()), ("page", page.to_string())],
             )
             .await?;
-        Ok(json!({ "code": 200, "data": Self::extract_cleaned_list(&raw) }))
+        Self::merge_following_page(&mut rows, &raw);
+        Ok(json!({ "code": 200, "data": rows }))
     }
 
     pub async fn get_follow_user_list(&self, uid: &str, page: u32, category: Option<&str>) -> Result<Value, String> {

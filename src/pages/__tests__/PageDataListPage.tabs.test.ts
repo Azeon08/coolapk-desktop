@@ -108,3 +108,18 @@ it.each(['填满窗口', '没有更多', '重复数据', '请求失败'])('系�
     expect(wrapper.findAll('.test-topic')).toHaveLength(scenario === '填满窗口' ? 40 : 20);
   } finally { wrapper.unmount(); }
 });
+
+it('最近更新保留用户实体，并跟随官方 flexList 配置请求列表', async () => {
+  api.query.url = '/user/recentUpdateList';
+  api.query.title = '最近更新';
+  api.getDiscoveryPageData.mockImplementation(async ({ url }) => url === '/user/recentUpdateList'
+    ? { data: [{ entityType: 'card', entityTemplate: 'configCard', extraData: { flexList: 1, url: '/user/updatedUsers' } }] }
+    : { data: [{ entityType: 'user', uid: '20', username: '关注酷友', url: '/u/20' }], hasMore: false });
+  const wrapper = mount(PageDataListPage, { global: { plugins: [createPinia()], stubs: { DiscoveryEntityCard: { props: ['entity'], template: '<article class="test-user">{{ entity.username }}</article>' } } } });
+  try {
+    await flushPromises();
+    expect(wrapper.get('.test-user').text()).toBe('关注酷友');
+    expect(api.getDiscoveryPageData.mock.calls.map(([options]) => options.url)).toEqual(['/user/recentUpdateList', '/user/updatedUsers']);
+    expect(api.getDiscoveryPageData).toHaveBeenLastCalledWith(expect.objectContaining({ title: '最近更新' }));
+  } finally { wrapper.unmount(); }
+});

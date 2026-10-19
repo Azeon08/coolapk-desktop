@@ -1,5 +1,5 @@
 <template>
-  <div class="home-page-layout">
+  <div class="home-page-layout" :class="{ 'has-follow-subchannels': isFollowingTab && followSubChannels.length > 0 }">
     <div class="main-feed-column">
       <div v-if="!props.embedded" class="feed-toolbar-row">
         <FeedTabs
@@ -32,6 +32,7 @@
             <span>{{ channel.title }}</span>
           </button>
         </div>
+        <button v-if="updatedFollowUsers?.available && updatedFollowUsers.collapsed" type="button" class="follow-updates-expand" aria-label="展开最近更新酷友" title="展开最近更新酷友" @click="updatedFollowUsers.expand()"><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
       </div>
 
       <div
@@ -43,7 +44,7 @@
         @pointerdown="handleFeedPointerDown"
         @click.capture="handleFeedClickCapture"
       >
-        <UpdatedFollowUsers v-if="isFollowingTab && (!selectedFollowSubChannel || isDefaultFollowSubChannel(selectedFollowSubChannel))" :feeds="feeds" />
+        <UpdatedFollowUsers ref="updatedFollowUsers" v-if="isFollowingTab && (!selectedFollowSubChannel || isDefaultFollowSubChannel(selectedFollowSubChannel))" :feeds="followingUpdateFeeds" />
         <!-- 1. 头条 Tab 专属：服务端要闻与动态子栏目 -->
         <div v-if="isHeadlineTab" class="headline-header-section">
           <!-- APK ConfigPage.rawEntities 动态下发的头条子栏目 -->
@@ -337,6 +338,7 @@ import FeedTabs from '../components/feed/FeedTabs.vue';
 import FeedLayoutToggle from '../components/feed/FeedLayoutToggle.vue';
 import FeedCard from '../components/feed/FeedCard.vue';
 import UpdatedFollowUsers from '../components/feed/UpdatedFollowUsers.vue';
+import { isFollowUpdateCard } from '../utils/followUpdates';
 import RatingCard from '../components/feed/RatingCard.vue';
 import QuestionAnswerCard from '../components/question/QuestionAnswerCard.vue';
 import QuestionFeedCard from '../components/question/QuestionFeedCard.vue';
@@ -386,6 +388,9 @@ const activeTab = ref('');
 let isInitializingHome = true;
 const page = ref(1);
 const feeds = ref<any[]>([]);
+// 单独保存官方横向卡片，避免被动态过滤丢弃或重复渲染。
+const followingUpdateFeeds = ref<any[]>([]);
+const updatedFollowUsers = ref<InstanceType<typeof UpdatedFollowUsers> | null>(null);
 const pageEntities = ref<DiscoveryEntity[]>([]);
 const pageEntityCursor = reactive({ firstItem: '', lastItem: '', pageContext: '' });
 const feedCursor = reactive({ firstItem: '', lastItem: '', pageContext: '' });
@@ -1107,7 +1112,7 @@ async function prefetchNextPage() {
     const nextP = page.value;
     const res: any = await fetchTabApi(activeTab.value, nextP, true);
     if (res && res.data && Array.isArray(res.data)) {
-      const validItems = res.data.filter((item: any) => hasFeedRenderableContent(item) && !shouldHideFeed(item, settingsStore.settings));
+      const validItems = res.data.filter((item: any) => !isFollowUpdateCard(item) && hasFeedRenderableContent(item) && !shouldHideFeed(item, settingsStore.settings));
       if (validItems.length > 0) {
         prefetchBuffer.value = validItems;
         prefetchPage.value = nextP + 1;
@@ -1129,6 +1134,7 @@ async function loadFeeds(isRefresh: boolean = false) {
     page.value = 1;
     noMore.value = false;
     feeds.value = [];
+    followingUpdateFeeds.value = [];
     pageEntities.value = [];
     pageEntityCursor.firstItem = '';
     pageEntityCursor.lastItem = '';
@@ -1184,8 +1190,9 @@ async function loadFeeds(isRefresh: boolean = false) {
       }
       if (res && res.data && Array.isArray(res.data)) {
         rawItems = res.data;
+        if (isFollowingTab.value && rawItems.some(isFollowUpdateCard)) followingUpdateFeeds.value = rawItems.filter(isFollowUpdateCard);
         if (isHeadlineTab.value) updateHeadlineQuickLinks(rawItems);
-        validItems = rawItems.filter((item: any) => hasFeedRenderableContent(item) && !shouldHideFeed(item, settingsStore.settings));
+        validItems = rawItems.filter((item: any) => !isFollowUpdateCard(item) && hasFeedRenderableContent(item) && !shouldHideFeed(item, settingsStore.settings));
         if (
           isHeadlineTab.value
           && selectedHeadlineSubChannelUrl.value
@@ -1681,6 +1688,8 @@ defineExpose({ handleHomeSubChannelSelected, activeFollowSubChannelKey });
 
 .follow-subchannel-bar {
   display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
   align-items: center;
   gap: 10px;
   min-height: 42px;
@@ -1689,8 +1698,14 @@ defineExpose({ handleHomeSubChannelSelected, activeFollowSubChannelKey });
   border-bottom: 1px solid var(--border-light, rgba(0, 0, 0, 0.06));
 }
 
+/* 展开按钮复用分类栏高度，收起头像列表后不再占用一行。 */
+.follow-updates-expand { display: flex; align-items: center; justify-content: center; flex: 0 0 32px; align-self: stretch; border: 0; border-radius: 8px; background: transparent; color: var(--text-tertiary); font-size: 11px; cursor: pointer; }
+.follow-updates-expand:hover { background: var(--surface-hover); color: var(--text-secondary); }
+.follow-updates-expand:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
 .follow-subchannel-list {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 4px;
   min-width: 0;

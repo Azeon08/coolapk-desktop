@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" :class="{ 'is-ranking': kind === 'ranking' }" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading || commentsLoading || commentsLoadingMore }" class="page-container custom-scrollbar" :class="{ 'is-ranking': kind === 'ranking' }" @scroll="handleScroll">
     <div v-if="loading && !feed" class="state-wrapper">
       <LoadingState text="正在加载好物详情..." />
     </div>
@@ -164,6 +164,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../../directives/pullRefresh';
 import { isFeedEdited } from '../../utils/feedEditStatus';
 import { ref, computed, watch } from 'vue';
 import { CoolapkTauriAPI } from '../../api/coolapk';
@@ -534,6 +535,9 @@ function formatRichText(text: string) {
 }
 
 void loadAll(true);
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { await loadFeed(); await loadComments(true); }
 </script>
 
 <style scoped>

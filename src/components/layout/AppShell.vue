@@ -115,10 +115,11 @@ const isMobileLayoutDisabled = computed(() => {
 const showMobileBottomNav = computed(() => !isMobileLayoutDisabled.value
   && ['/', '/digital', '/discover', '/me'].includes(route.path));
 
-// 仅移动首页参与阅读收起；浮层打开或退出该布局时立即恢复所有导航。
+// 首页、数码和发现共用阅读收起；只跟随正文滚动，浮层打开或退出该布局时立即恢复。
 const reading = useMobileReadingNavigation(computed(() => settingsStore.settings.autoHideMobileNavigation
-  && mobileLayout.value && readingViewportWidth.value <= 720 && !isMobileLayoutDisabled.value && route.path === '/'
-  && !mobileNavigationOpen.value && !appStore.isSearchOpen && !appStore.isPublishOpen && !appStore.activeImageViewer));
+  && mobileLayout.value && readingViewportWidth.value <= 720 && !isMobileLayoutDisabled.value && ['/', '/digital', '/discover'].includes(route.path)
+  && !mobileNavigationOpen.value && !appStore.isSearchOpen && !appStore.isPublishOpen && !appStore.activeImageViewer),
+  () => route.path === '/digital' ? '.digital-content, .digital-server-content' : route.path === '/discover' ? '.discover-scroll-container' : undefined);
 provide(mobileReadingNavigationKey, { hidden: reading.hidden, reset: reading.reset });
 
 /** 话题栏目吸顶后由下方玻璃向上延伸，避免上下两次独立模糊在接缝处产生色差。 */

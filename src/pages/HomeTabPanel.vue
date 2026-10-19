@@ -35,7 +35,7 @@
         <button v-if="updatedFollowUsers?.available && updatedFollowUsers.collapsed" type="button" class="follow-updates-expand" aria-label="展开最近更新酷友" title="展开最近更新酷友" @click="updatedFollowUsers.expand()"><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
       </div>
 
-      <div
+      <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading || loadingMore || isPrefetching || !props.selected }"
         ref="feedScrollContainer"
         class="feed-scroll-container custom-scrollbar"
         @scroll="handleScroll"
@@ -332,6 +332,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, inject, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import FeedTabs from '../components/feed/FeedTabs.vue';
@@ -1639,6 +1640,9 @@ watch(() => props.tabs, (tabs) => { if (props.embedded && tabs) serverTabs.value
 onDeactivated(unbindGlobalListeners);
 onUnmounted(unbindGlobalListeners);
 defineExpose({ handleHomeSubChannelSelected, activeFollowSubChannelKey });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { await loadFeeds(true); }
 </script>
 
 <style scoped>

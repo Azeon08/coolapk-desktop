@@ -1,3 +1,4 @@
+import { mobilePull } from '../../test-utils/mobilePull';
 import { mount, flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import DigitalPage from '../DigitalPage.vue';
@@ -101,5 +102,19 @@ it('桌面数码继续直接展示当前栏目', async () => {
     await flushPromises();
     expect(wrapper.findComponent(DiscoveryPager).exists()).toBe(false);
     expect(api.getDiscoveryPageData).toHaveBeenCalledTimes(1);
+  } finally { wrapper.unmount(); }
+});
+
+it('下拉已到末页的数码栏目仍从第一页刷新并保留栏目', async () => {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+  const wrapper = mount(DigitalPage, { props: { channelOnly: true, channelActive: true, channelKey: 'V10_PHONE', channelTabs: [{ key: 'V10_PHONE', title: '手机', url: 'V10_PHONE', pageName: 'V10_PHONE', category: false, rawEntities: [] } as any] }, global: { stubs: { FeedTabs: true, MobileDigitalCard: true, DiscoveryEntityCard: true, DigitalProductCard: true } } });
+  try {
+    await flushPromises();
+    const calls = api.getDiscoveryPageData.mock.calls.length;
+    mobilePull(wrapper.element as HTMLElement);
+    await flushPromises();
+    expect(api.getDiscoveryPageData).toHaveBeenCalledTimes(calls + 1);
+    expect(api.getDiscoveryPageData).toHaveBeenLastCalledWith(expect.objectContaining({ url: 'V10_PHONE', page: 1, firstItem: '', lastItem: '' }));
+    expect(api.push).not.toHaveBeenCalled();
   } finally { wrapper.unmount(); }
 });

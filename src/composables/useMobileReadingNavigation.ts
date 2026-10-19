@@ -4,7 +4,7 @@ export const mobileReadingNavigationKey: InjectionKey<{ hidden: Readonly<Ref<boo
 export const mobileDetailActionsHiddenKey: InjectionKey<Readonly<Ref<boolean>>> = Symbol('mobile-detail-actions-hidden');
 
 /** 只响应指定阅读区域的纵向滚动，排除布局变化、后台栏目和横向手势。 */
-export function useMobileReadingNavigation(enabled: Readonly<Ref<boolean>>, scrollContainer?: string) {
+export function useMobileReadingNavigation(enabled: Readonly<Ref<boolean>>, scrollContainer?: string | (() => string | undefined)) {
   const hidden = ref(false);
   let scroller: HTMLElement | null = null;
   let lastTop = 0, distance = 0, direction = 0, intent = 0, intentUntil = 0;
@@ -20,12 +20,14 @@ export function useMobileReadingNavigation(enabled: Readonly<Ref<boolean>>, scro
 
   function findScroller(target: EventTarget | null): HTMLElement | null {
     if (!enabled.value || !(target instanceof Element)) return null;
+    // 主栏目切换后使用各自真正滚动的内容区，首页继续保留活动翻页校验。
+    const selector = typeof scrollContainer === 'function' ? scrollContainer() : scrollContainer;
     if (target.closest('input, textarea, [contenteditable="true"]')) return null;
-    if (!scrollContainer && target.closest('.feed-comment-section')) return null;
-    const element = target.closest<HTMLElement>(scrollContainer || '.feed-scroll-container');
+    if (!selector && target.closest('.feed-comment-section')) return null;
+    const element = target.closest<HTMLElement>(selector || '.feed-scroll-container');
     if (!element || element.closest('[aria-hidden="true"], [inert]')) return null;
     // 详情正文和评论共用页面滚动区域；首页仍须校验当前活动栏目与翻页状态。
-    if (scrollContainer) return element;
+    if (selector) return element;
     const pager = element?.closest('.mobile-home-pager');
     if (!element || !pager || pager.classList.contains('is-pager-moving') || element.closest('[aria-hidden="true"]')) return null;
     return element;

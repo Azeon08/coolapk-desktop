@@ -1,5 +1,5 @@
 <template>
-  <div ref="pageContainerRef" class="page-container custom-scrollbar" @scroll.passive="handlePageScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" ref="pageContainerRef" class="page-container custom-scrollbar" @scroll.passive="handlePageScroll">
     <div class="page-header">
       <div class="notification-title-row">
         <h2 class="page-title">通知中心</h2>
@@ -99,8 +99,9 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { htmlToPlainText } from '../utils/htmlText';
-import { nextTick, onActivated, onDeactivated, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import { useAuthStore } from '../stores/auth';
@@ -538,6 +539,10 @@ watch(
   }
 );
 
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await refreshNotifications(); }
 </script>
 
 <style scoped>

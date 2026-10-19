@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading }" class="page-container custom-scrollbar">
     <div class="page-header">
       <div class="header-main">
         <h2 class="page-title"><i :class="[icon, 'icon']"></i> {{ title }}</h2>
@@ -113,6 +113,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../../directives/pullRefresh';
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../../api/coolapk';
@@ -311,6 +312,9 @@ onMounted(() => {
 onActivated(bindGlobalListeners);
 onDeactivated(unbindGlobalListeners);
 onUnmounted(unbindGlobalListeners);
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { await load(true); }
 </script>
 
 <style scoped>

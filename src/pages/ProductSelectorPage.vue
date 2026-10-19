@@ -1,5 +1,5 @@
 <template>
-  <div class="product-selector-page custom-scrollbar" @scroll.passive="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="product-selector-page custom-scrollbar" @scroll.passive="handleScroll">
     <section class="selector-toolbar">
       <div class="sort-row" role="tablist" aria-label="排序方式">
         <button
@@ -107,6 +107,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppImage from '../components/common/AppImage.vue';
@@ -377,6 +378,10 @@ onUnmounted(() => {
     observer = null;
   }
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await loadModels(true); }
 </script>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handlePageScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading || discussionsLoading || commentsLoading || versionsLoading || discoverersLoading || giftsLoading || relatedAppsLoading || relatedAlbumsLoading }" class="page-container custom-scrollbar" @scroll="handlePageScroll">
     <!-- 当前应用标题 -->
     <div class="detail-nav-bar">
       <span v-if="appTitle" class="nav-app-name">{{ appTitle }}</span>
@@ -490,6 +490,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -1256,6 +1257,9 @@ onMounted(() => {
   void downloadStore.initialize();
   void fetchAppDetail();
 });
+
+// 下拉更新当前详情与当前栏目，保留筛选和排序。
+async function refreshMobilePage() { await fetchAppDetail(); if (activeDetailTab.value === 'discussions') await loadDiscussions(true); else if (activeDetailTab.value === 'comments') await loadApkComments(true); else if (activeDetailTab.value === 'versions') await loadVersions(); else if (activeDetailTab.value === 'discoverers') await loadDiscoverers(true); else if (activeDetailTab.value === 'gifts') await loadGifts(true); else if (activeDetailTab.value === 'relatedApps') await loadRelatedApps(true); else if (activeDetailTab.value === 'relatedAlbums') await loadRelatedAlbums(true); }
 </script>
 
 <style scoped>

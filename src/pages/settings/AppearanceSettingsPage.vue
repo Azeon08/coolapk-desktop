@@ -196,7 +196,7 @@
       <div class="setting-row">
         <div class="row-info">
           <span class="row-label">滚动时自动隐藏导航</span>
-          <span class="row-sub">移动布局向下阅读时收起首页搜索栏、底部 Dock 或详情操作栏，保留栏目栏，反向滚动恢复显示</span>
+          <span class="row-sub">移动布局向下阅读时收起首页、数码和发现的搜索栏与底部 Dock，或详情操作栏；保留栏目栏，反向滚动恢复显示</span>
         </div>
         <AppSwitch v-model="settingsStore.settings.autoHideMobileNavigation" />
       </div>

@@ -1,5 +1,5 @@
 <template>
-  <div class="topics-page" ref="pageRootRef">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading }" class="topics-page" ref="pageRootRef">
     <!-- FLIP 跨平台平滑过渡 Ghost 元素 -->
     <div
       v-if="ghostData"
@@ -276,6 +276,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { observeResizeOnFrame } from '../utils/observeResizeOnFrame';
 import { ref, computed, onMounted, onUnmounted, onActivated, nextTick, watch } from 'vue';
 import { usePersistedColumnResize } from '../composables/usePersistedColumnResize';
@@ -921,6 +922,9 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
   document.removeEventListener('click', handleClickOutside);
 });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { await fetchTopicData(activeCategoryUrl.value || topicEntryUrl, false); }
 </script>
 
 <style scoped>

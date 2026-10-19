@@ -1,5 +1,5 @@
 <template>
-  <div class="product-category-page page-container custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: sideLoading || productLoading }" class="product-category-page page-container custom-scrollbar">
     <div class="category-toolbar">
       <div class="mode-switch" role="tablist" aria-label="数码分类筛选">
         <button
@@ -119,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppImage from '../components/common/AppImage.vue';
@@ -261,6 +262,9 @@ function formatCount(value: number) {
 onMounted(() => {
   void loadSide();
 });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { productPage.value = 1; productNoMore.value = false; if (selected.value) await loadProducts(false); else await loadSide(); }
 </script>
 
 <style scoped>

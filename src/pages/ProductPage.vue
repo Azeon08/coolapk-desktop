@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: headerLoading || feedsLoading || externalLoading || mediaLoading || ratingsLoading }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div v-if="headerLoading" class="product-header-card skeleton-header">
       <LoadingState text="正在加载产品信息..." />
     </div>
@@ -418,6 +418,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -652,16 +653,18 @@ const productDescription = computed(() => {
     || '';
 });
 
-async function fetchProductHeader() {
+async function fetchProductHeader(preserveContent = false) {
   if (!productId.value) return;
   headerLoading.value = true;
   headerError.value = false;
-  productDetail.value = null;
+  // 下拉时保留正文，避免子栏目卸载及重复加载。
+  if (!preserveContent) productDetail.value = null;
   try {
     const res = await CoolapkTauriAPI.getProductDetail(productId.value);
     if (res?.data && typeof res.data === 'object') {
       productDetail.value = res.data;
       buyChecked.value = isBought.value;
+      if (preserveContent && allTabs.value.some((tab) => tab.key === activeTab.value)) return;
       const requested = String(route.query.tab || '');
       const preferred = allTabs.value.find((tab) => tab.key === requested)?.key
         || allTabs.value.find((tab) => tab.key === activeTab.value)?.key
@@ -1253,6 +1256,9 @@ watch(
     if (requestedTab !== activeTab.value) selectTab(requestedTab);
   },
 );
+
+// 下拉更新当前详情与当前栏目，保留筛选和排序。
+async function refreshMobilePage() { await fetchProductHeader(true); if (selectedTab.value?.kind === 'external') await fetchExternalTab(false); else if (isFeedTab.value) { resetFeeds(); await fetchFeeds(false); } else if (activeTab.value === 'config') await fetchConfigs(); else if (activeTab.value === 'media') { mediaPage.value = 1; mediaNoMore.value = false; await fetchMedia(false); } else if (activeTab.value === 'rating') { ratingsPage.value = 1; ratingsNoMore.value = false; ratingFirstItem.value = ''; ratingLastItem.value = ''; await fetchRatingChart(); await fetchRatings(false); } }
 </script>
 
 <style scoped>

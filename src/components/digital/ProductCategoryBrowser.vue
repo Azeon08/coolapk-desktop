@@ -1,5 +1,5 @@
 <template>
-  <div class="category-browser">
+  <div v-pull-refresh="{ refresh: refreshMobileCategory, disabled: directoryLoading || loading }" class="category-browser">
     <LoadingState v-if="directoryLoading" text="正在加载分类…" />
     <ErrorState v-else-if="directoryError" title="分类加载失败" :message="directoryError" @retry="loadDirectory" />
     <EmptyState v-else-if="!categories.length" title="暂无分类" />
@@ -32,6 +32,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../../directives/pullRefresh';
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { CoolapkTauriAPI } from '../../api/coolapk';
 import AppImage from '../common/AppImage.vue';
@@ -153,6 +154,13 @@ function openItem(entity: DiscoveryEntity) {
 }
 watch(() => props.selectedId, selectInitialCategory);
 onMounted(loadDirectory);
+
+async function refreshMobileCategory() {
+  if (!selected.value) { await loadDirectory(); return; }
+  revision++;
+  page = 1; firstItem = lastItem = ''; noMore.value = false;
+  await loadContent();
+}
 </script>
 
 <style scoped>

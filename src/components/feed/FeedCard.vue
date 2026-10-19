@@ -391,7 +391,7 @@ import { getErrorMessage } from '../../utils/errors';
 import { extractFeedImageInputs, type FeedImageInput } from '../../utils/livePhoto';
 import { normalizeCoolapkNativeRoute, normalizeCoolapkPageRoute, normalizeCoolapkRoute } from '../../utils/coolapkRoute';
 import { isAnswerSearchEntity } from '../../utils/searchEntities';
-import { getQuestionAnswerCount, getQuestionFollowCount, isQuestionFeedEntity } from '../../utils/question';
+import { getQuestionAnswerCount, getQuestionFeedId, getQuestionFollowCount, isQuestionFeedEntity } from '../../utils/question';
 import {
   getFeedRelationImage,
   getFeedRelationKey,
@@ -1395,6 +1395,9 @@ function keepCollapsedCardVisible(card: HTMLElement, scrollContainer: HTMLElemen
 }
 
 async function toggleComments() {
+  // 提问的评论入口实际是回答列表，不调用普通回复接口或右侧评论面板。
+  if (openQuestionDetail(true)) return;
+  if (!props.detailMode && mobileOfficialEnabled.value && openAnswerDetail('comments')) return;
   if (props.replyMode && !props.detailMode) { await openReplyDetail(); return; }
   if (!props.detailMode && opensDetailOnClick.value && !isQuestionCard.value && !isAnswerCard.value) { navigateToOfficialDetail('comments'); return; }
   if (props.disableInlineComments) {
@@ -1570,19 +1573,16 @@ function handleCardClick(e: MouseEvent) {
   else toggleComments();
 }
 
-function openQuestionDetail(): boolean {
+function openQuestionDetail(atAnswers = false): boolean {
   if (!isQuestionCard.value) return false;
-  const feed = props.feed as any;
-  const questionId = [feed.questionId, feed.question_id, feed.id, feed.entityId, feed.entity_id, feed.feedId, feed.feed_id]
-    .map((value) => String(value ?? '').trim())
-    .find(Boolean) || '';
+  const questionId = getQuestionFeedId(props.feed);
   if (!questionId) return false;
   appStore.setFeedDetailContext(questionId, props.feed);
-  void router.push(`/question/${encodeURIComponent(questionId)}`);
+  void router.push(atAnswers ? { path: `/question/${encodeURIComponent(questionId)}`, query: { scrollTo: 'answers' } } : `/question/${encodeURIComponent(questionId)}`);
   return true;
 }
 
-function openAnswerDetail(): boolean {
+function openAnswerDetail(scrollTo?: 'top' | 'comments'): boolean {
   if (!isAnswerCard.value) return false;
   const feed = props.feed as any;
   const answerId = [feed.answerId, feed.answer_id, feed.id, feed.entityId, feed.entity_id, feed.feedId, feed.feed_id]
@@ -1590,7 +1590,8 @@ function openAnswerDetail(): boolean {
     .find(Boolean) || '';
   if (!answerId) return false;
   appStore.setFeedDetailContext(answerId, props.feed);
-  void router.push(`/feed/${encodeURIComponent(answerId)}`);
+  const path = `/feed/${encodeURIComponent(answerId)}`;
+  void router.push(scrollTo ? { path, query: { scrollTo } } : path);
   return true;
 }
 
@@ -1604,6 +1605,7 @@ function formatRichText(text: string) {
 }
 
 defineExpose({
+  refreshComments: () => showComments.value ? openComments(true) : Promise.resolve(),
   toggleComments,
   handleCollapseComments,
   showComments,

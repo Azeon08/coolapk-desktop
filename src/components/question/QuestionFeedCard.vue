@@ -68,7 +68,7 @@
           <i :class="isFollowed ? 'fas fa-check' : 'fas fa-plus'" aria-hidden="true"></i>
           {{ isFollowed ? '已关注' : '关注问题' }}
         </button>
-        <button type="button" class="question-feed-action question-feed-answer-action" @click.stop="openQuestionDetail">
+        <button type="button" class="question-feed-action question-feed-answer-action" @click.stop="openQuestionDetail(true)">
           <i class="fas fa-pen-to-square" aria-hidden="true"></i>
           回答问题
         </button>
@@ -101,7 +101,7 @@ import {
   getFeedRelationType,
 } from '../../utils/feedRelations';
 import { normalizeCoolapkNativeRoute, normalizeCoolapkPageRoute, normalizeCoolapkRoute } from '../../utils/coolapkRoute';
-import { getQuestionAnswerCount, getQuestionAnswerImages, getQuestionFollowCount, getQuestionMessage, getQuestionTitle, isQuestionFollowed } from '../../utils/question';
+import { getQuestionAnswerCount, getQuestionAnswerImages, getQuestionFeedId, getQuestionFollowCount, getQuestionMessage, getQuestionTitle, isQuestionFollowed } from '../../utils/question';
 import { getUserUid } from '../../utils/userRoute';
 import { preloadUserProfile } from '../../utils/userProfilePreloader';
 import { showToast } from '../../utils/toast';
@@ -124,13 +124,7 @@ const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
 const showDeviceInfo = computed(() => settingsStore.settings.showDeviceInfo);
 const authorUid = computed(() => getUserUid(props.question));
-const questionId = computed(() => String(
-  (props.question as any).questionId
-    ?? (props.question as any).question_id
-    ?? (props.question as any).id
-    ?? (props.question as any).entityId
-    ?? '',
-).trim());
+const questionId = computed(() => getQuestionFeedId(props.question));
 const questionTitle = computed(() => getQuestionTitle(props.question));
 const questionMessage = computed(() => getQuestionMessage(props.question));
 const questionImages = computed(() => getQuestionAnswerImages(props.question));
@@ -221,11 +215,11 @@ function openTarget(target: any) {
   }
 }
 
-function openQuestionDetail() {
+function openQuestionDetail(atAnswers = false) {
   const id = questionId.value;
   if (!id) return;
   appStore.setFeedDetailContext(id, props.question);
-  void router.push(`/question/${encodeURIComponent(id)}`);
+  void router.push(atAnswers ? { path: `/question/${encodeURIComponent(id)}`, query: { scrollTo: 'answers' } } : `/question/${encodeURIComponent(id)}`);
 }
 
 function handleCardClick(event: MouseEvent) {

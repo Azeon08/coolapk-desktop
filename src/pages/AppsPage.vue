@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar">
     <!-- 顶栏工具条：左侧分类 Tab，右侧搜索模式切换 + 搜索框 -->
     <div class="apps-toolbar-bar">
       <div class="apps-tabs-wrapper">
@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -220,6 +221,10 @@ function navigateToApp(app: any) {
 }
 
 onMounted(() => loadApps());
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await loadApps(); }
 </script>
 
 <style scoped>

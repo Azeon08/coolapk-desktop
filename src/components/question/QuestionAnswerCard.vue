@@ -1,7 +1,7 @@
 <template>
   <article
     ref="cardRef"
-    :class="['question-answer-card', { 'is-detail-mode': detailMode }]"
+    :class="['question-answer-card', { 'is-detail-mode': detailMode, 'is-official-mobile-detail': officialMobileDetail }]"
     :data-answer-id="answer.id"
     :data-question-id="questionIdValue"
     @click="handleCardClick"
@@ -119,7 +119,11 @@
       </button>
     </div>
 
+    <Teleport to="body" :disabled="!officialMobileDetail">
     <FeedActionBar
+      v-show="!officialMobileDetail || (componentActive && pageVisible && !hasBlockingOverlay)"
+      :official-detail="officialMobileDetail"
+      @write-comment="writeMobileComment"
       :feed-id="answer.id"
       :likenum="answer.likenum"
       :replynum="replyCount"
@@ -127,15 +131,18 @@
       :sharenum="answer.sharenum"
       :favorited="isFav"
       :user-action="answer.userAction"
-      @open-comment="toggleComments"
+      @open-comment="officialMobileDetail ? scrollToMobileComments() : toggleComments()"
       @toggle-fav="toggleFav"
       @forward="openForwardDialog"
       @open-like-list="openLikeList"
       @open-forward-list="openForwardList"
     />
+    </Teleport>
 
     <div v-if="showComments" class="answer-comments-wrapper" @click.stop="touchActiveComments(answer.id)">
       <FeedCommentSection
+        ref="commentSectionRef"
+        :official-detail="officialMobileDetail"
         :target-reply-id="targetReplyId"
         :feed-id="answer.id"
         :feed-uid="authorUid"
@@ -183,8 +190,10 @@
 
 <script setup lang="ts">
 import { isFeedEdited } from '../../utils/feedEditStatus';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { useOfficialMobileFeedDetail } from '../../composables/useOfficialMobileFeedDetail';
+import { feedPageVisibleKey } from '../../utils/feedPageVisibility';
 import type { FeedItem } from '../../types/feed';
 import { CoolapkTauriAPI } from '../../api/coolapk';
 import FeedActionBar from '../feed/FeedActionBar.vue';
@@ -233,6 +242,7 @@ const props = withDefaults(defineProps<{
   questionId?: string | number;
   questionTitle?: string;
   detailMode?: boolean;
+  officialMobileDetail?: boolean;
   autoOpenComments?: boolean;
   targetReplyId?: string;
   navigateToQuestion?: boolean;
@@ -243,6 +253,7 @@ const props = withDefaults(defineProps<{
   highlightKeyword?: string;
 }>(), {
   detailMode: false,
+  officialMobileDetail: false,
   autoOpenComments: false,
   navigateToQuestion: true,
   showAnswerHeading: true,
@@ -261,6 +272,14 @@ const router = useRouter();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
+const mobileOfficialEnabled = useOfficialMobileFeedDetail();
+const commentSectionRef = ref<InstanceType<typeof FeedCommentSection> | null>(null);
+const componentActive = ref(true);
+const pageVisible = inject(feedPageVisibleKey, ref(true));
+// 固定底栏随缓存页面停用或浮层打开隐藏，避免遮挡其它页面及输入浮层。
+const hasBlockingOverlay = computed(() => Boolean(appStore.activeImageViewer || appStore.isSearchOpen || appStore.isPublishOpen || authStore.isLoginModalOpen || forwardOpen.value || interactionMode.value || collectionPickerOpen.value));
+onActivated(() => { componentActive.value = true; });
+onDeactivated(() => { componentActive.value = false; });
 const showDeviceInfo = computed(() => settingsStore.settings.showDeviceInfo);
 const authorUid = computed(() => getUserUid(props.answer));
 const answerImages = computed<FeedImageInput[]>(() => extractFeedImageInputs(props.answer));
@@ -512,21 +531,25 @@ function openQuotedFeed() {
 
 function openQuestionDetail() {
   if (!questionIdValue.value) return;
-  appStore.setFeedDetailContext(questionIdValue.value, props.answer);
+  // 回答正文不属于问题正文；只有完整的父问题实体才能作为问题详情预载内容。
+  const question = (props.answer as any).question;
+  if (question && String(question.id || question.entityId || '') === questionIdValue.value) appStore.setFeedDetailContext(questionIdValue.value, question);
   void router.push(`/question/${encodeURIComponent(questionIdValue.value)}`);
 }
 
-function openAnswerDetail() {
+function openAnswerDetail(scrollTo?: 'top' | 'comments') {
   const answerId = String(props.answer.id || '').trim();
   if (!answerId) return;
   appStore.setFeedDetailContext(answerId, props.answer);
-  void router.push(`/feed/${encodeURIComponent(answerId)}`);
+  const path = `/feed/${encodeURIComponent(answerId)}`;
+  void router.push(scrollTo ? { path, query: { scrollTo } } : path);
 }
 
 function handleCardClick(event: MouseEvent) {
   if (props.detailMode) return;
   const target = event.target as HTMLElement;
   if (target.closest('a, button, .grid-item, .feed-video-card, .answer-comments-wrapper, .question-related-card, .answer-related-card, .answer-quoted-feed')) return;
+  // 问答栏目进入完整问题及全部回答；问题页里的单条回答仍可进入回答详情。
   if (props.navigateToQuestion && questionIdValue.value) openQuestionDetail();
   else openAnswerDetail();
 }
@@ -775,11 +798,26 @@ async function openComments(force = false) {
 }
 
 function toggleComments() {
+  // 列表评论入口直接定位新页面的评论区，详情页继续使用本页评论。
+  if (!props.detailMode && mobileOfficialEnabled.value) { openAnswerDetail('comments'); return; }
   if (showComments.value) {
     showComments.value = false;
     return;
   }
   void openComments();
+}
+
+// 复用动态详情的移动评论列表、底栏和底部输入面板，不显示桌面内嵌输入框。
+async function writeMobileComment() {
+  if (!authStore.isLoggedIn) { authStore.openLoginModal(); return; }
+  void openComments();
+  await nextTick();
+  commentSectionRef.value?.openComposer();
+}
+async function scrollToMobileComments() {
+  void openComments();
+  await nextTick();
+  cardRef.value?.querySelector('.comment-toolbar')?.scrollIntoView({ block: 'start', behavior: settingsStore.settings.reduceMotion ? 'auto' : 'smooth' });
 }
 
 function handleCollapseComments() {
@@ -849,7 +887,7 @@ watch(() => String(props.answer.id || ''), () => {
 onUnmounted(() => {
   commentsRequestVersion += 1;
 });
-defineExpose({ toggleComments, handleCollapseComments, showComments });
+defineExpose({ refreshComments: () => showComments.value ? openComments(true) : Promise.resolve(), toggleComments, handleCollapseComments, showComments });
 </script>
 
 <style scoped>
@@ -874,6 +912,10 @@ defineExpose({ toggleComments, handleCollapseComments, showComments });
   border-left: 0;
   box-shadow: none;
 }
+
+/* 回答详情沿用移动评论的无卡片布局，吸顶跟随页面，底栏空间不遮挡末条回复。 */
+.question-answer-card.is-official-mobile-detail { overflow: visible; border: 0; padding: 16px; margin: 0; }
+.is-official-mobile-detail .answer-comments-wrapper { margin: 16px -16px 0; }
 
 .answer-kind-badge,
 .answer-recommend-badge {

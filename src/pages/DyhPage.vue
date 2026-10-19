@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div v-if="headerLoading" class="dyh-header-card skeleton-header">
       <LoadingState text="正在加载看看号信息..." />
     </div>
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePageTabTitle } from '../composables/usePageTabTitle';
@@ -323,6 +324,10 @@ watch(dyhId, () => {
   void fetchDyhHeader();
   void fetchFeeds(false);
 }, { immediate: true });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => feedsLoading.value || headerLoading.value);
+async function refreshMobilePage() { resetFeeds(); await fetchDyhHeader(); await fetchFeeds(false); }
 </script>
 
 <style scoped>

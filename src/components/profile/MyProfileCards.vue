@@ -114,6 +114,9 @@ async function save() {
   } catch (err) { saveError.value = String(err instanceof Error ? err.message : err); }
   finally { saving.value = false; }
 }
+
+// 由外层页面下拉统一等待内容刷新完成。
+defineExpose({ refresh: load });
 </script>
 <style scoped>
 button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; touch-action: manipulation; }

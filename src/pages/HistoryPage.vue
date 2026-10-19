@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <!-- 未登录引导 -->
     <div v-if="!authStore.isLoggedIn" class="empty-wrapper">
       <EmptyState title="登录后查看浏览历史" description="登录酷安账号后，此处将同步展示您在酷安上真实的浏览历史与最近访问记录" />
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import AppButton from '../components/common/AppButton.vue';
@@ -484,6 +485,10 @@ onMounted(() => {
     void fetchHistory(true);
   }
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await fetchHistory(true); }
 </script>
 
 <style scoped>

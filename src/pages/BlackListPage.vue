@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy || !authStore.isLoggedIn }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div class="page-header">
       <div class="header-main">
         <h2 class="page-title"><i class="fas fa-user-slash icon"></i> 黑名单</h2>
@@ -81,6 +81,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, watch, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import AppButton from '../components/common/AppButton.vue';
@@ -221,6 +222,10 @@ watch(
 onMounted(() => {
   if (authStore.isLoggedIn) void fetchItems(true);
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await fetchItems(true); }
 </script>
 
 <style scoped>

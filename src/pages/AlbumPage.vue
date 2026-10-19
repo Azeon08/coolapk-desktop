@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div v-if="headerLoading" class="album-header-card skeleton-header">
       <LoadingState text="正在加载专辑信息..." />
     </div>
@@ -111,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePageTabTitle } from '../composables/usePageTabTitle';
@@ -288,6 +289,10 @@ onMounted(() => {
   fetchAlbumHeader();
   fetchFeeds(false);
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => feedsLoading.value || headerLoading.value);
+async function refreshMobilePage() { page.value = 1; noMore.value = false; await fetchAlbumHeader(); await fetchFeeds(false); }
 </script>
 
 <style scoped>

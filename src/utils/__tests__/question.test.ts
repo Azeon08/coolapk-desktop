@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractQuestionAnswers,
   getQuestionAnswerCount,
+  getQuestionFeedId,
   getQuestionFollowCount,
   getQuestionMessage,
   isQuestionFollowed,
@@ -70,4 +71,12 @@ describe('问答数据归一化', () => {
       question_follow_num: 0,
     })).toBe(false);
   });
+});
+
+it('提问使用自身 ID，忽略父级或占位 questionId', () => {
+  expect(getQuestionFeedId({ id: '42', questionId: '0', fid: '0' })).toBe('42');
+  expect(getQuestionFeedId({ id: '42', questionId: '99' })).toBe('42');
+  expect(getQuestionFeedId({ entityId: '42', question_id: '99' })).toBe('42');
+  expect(getQuestionFeedId({ questionId: '42' })).toBe('42');
+  expect(getQuestionFeedId({ id: 0, questionId: '0' })).toBe('');
 });

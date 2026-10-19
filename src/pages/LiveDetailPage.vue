@@ -1,5 +1,5 @@
 <template>
-  <div class="live-detail-page custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="live-detail-page custom-scrollbar">
     <div class="live-detail-shell">
       <header class="live-detail-header">
         <button type="button" class="live-back-button" aria-label="返回" @click="router.back()"><i class="fas fa-arrow-left"></i></button>
@@ -51,6 +51,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppImage from '../components/common/AppImage.vue';
@@ -175,6 +176,10 @@ function openInBrowser() {
 onMounted(() => { void loadDetail(); });
 watch(liveId, () => { liveDetail.value = null; void loadDetail(); });
 watch(videoUrl, () => { videoFailed.value = false; });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await loadDetail(); }
 </script>
 
 <style scoped>

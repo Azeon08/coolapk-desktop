@@ -225,6 +225,23 @@ describe('动态卡片编辑记录', () => {
     expect(wrapper.find('.stub-share-image-dialog').attributes('data-open')).toBe('true');
   });
 
+  it.each([true, false])('提问点评论直接进入回答列表，详情开关为 %s', async enabled => {
+    const pinia = createPinia();
+    useSettingsStore(pinia).settings.desktopCommentsOnRight = true;
+    useSettingsStore(pinia).settings.desktopFeedDetailOnClick = enabled;
+    const openRight = vi.fn(() => true);
+    const wrapper = mount(FeedCard, {
+      props: { feed: { id: '42', uid: '123', username: '提问者', feedType: 'question', questionId: '0', message: '问题正文' } },
+      global: { plugins: [pinia], provide: { [openDesktopFeedCommentsKey as symbol]: openRight }, stubs: { FeedHeader: true, FeedContent: true, FeedImageGrid: true, FeedActionBar: true, FeedCommentSection: true, ForwardDialog: true, AppDialog: true } },
+    });
+    await wrapper.findComponent({ name: 'FeedActionBar' }).vm.$emit('open-comment');
+    await flushPromises();
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: '/question/42', query: { scrollTo: 'answers' } });
+    expect(openRight).not.toHaveBeenCalled();
+    expect(wrapper.find('.inline-comment-wrapper').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('提问卡显示 APK 的回答/关注统计并沿用问答头部标识', async () => {
     const wrapper = mount(FeedCard, {
       props: {

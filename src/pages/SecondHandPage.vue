@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar">
     <div class="page-header">
       <div class="header-main">
         <h2 class="page-title"><i class="fas fa-store icon"></i> 二手市场</h2>
@@ -42,7 +42,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
+import { vPullRefresh } from '../directives/pullRefresh';
+import { computed, ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import DiscoveryEntityCard from '../components/discovery/DiscoveryEntityCard.vue';
@@ -164,6 +165,10 @@ onMounted(() => {
 onActivated(bindGlobalListeners);
 onDeactivated(unbindGlobalListeners);
 onUnmounted(unbindGlobalListeners);
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await loadFeeds(true); }
 </script>
 
 <style scoped>

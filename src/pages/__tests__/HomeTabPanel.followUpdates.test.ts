@@ -1,3 +1,4 @@
+import { mobilePull } from '../../test-utils/mobilePull';
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -35,6 +36,11 @@ it.each([390, 1280])('宽度 %s 的首页全部关注展示更新名单，其他
     await wrapper.get('.follow-updates-expand').trigger('click');
     expect(wrapper.get('.updated-follow-users').text()).toContain('关注酷友');
     expect(wrapper.find('.follow-updates-expand').exists()).toBe(false);
+    const refreshCalls = api.getFollowingFeeds.mock.calls.length;
+    mobilePull(wrapper.get('.feed-scroll-container').element as HTMLElement);
+    await flushPromises();
+    expect(api.getFollowingFeeds).toHaveBeenCalledTimes(refreshCalls + (width <= 720 ? 1 : 0));
+    expect(wrapper.get('.follow-subchannel-item.active').text()).toBe('全部关注');
     const channels = wrapper.findAll('.follow-subchannel-item');
     await channels[2]!.trigger('click');
     await flushPromises();

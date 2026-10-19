@@ -1,5 +1,5 @@
 <template>
-  <div class="digital-page page-container" :class="{ 'is-mobile-presentation': mobilePresentation }">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: configLoading || tabLoading || sideLoading || productLoading || dynamicCategoryLoading || (props.channelOnly && !props.channelActive) }" class="digital-page page-container" :class="{ 'is-mobile-presentation': mobilePresentation }">
     <FeedTabs v-if="digitalTabs.length && !channelOnly" :active-key="selectedTabKey" :tabs="digitalTabNavItems" :swipe-progress="mobilePresentation ? swipeProgress : undefined" :show-manage="false" @update:active-key="selectDigitalTabByKey" />
 
     <!-- 复用发现页的滑动容器；各栏目独立保留筛选、分页与滚动位置。 -->
@@ -240,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -981,6 +982,9 @@ watch(mobilePresentation, mobile => { if (!mobile && !props.channelOnly && selec
 onMounted(() => { void loadDigitalConfig(); });
 
 onBeforeUnmount(() => { productObserver?.disconnect(); dynamicCategoryObserver?.disconnect(); tabObserver?.disconnect(); productObserver = null; dynamicCategoryObserver = null; tabObserver = null; });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { if (!digitalTabs.value.length) { await loadDigitalConfig(); return; } if (isCategoryTab.value) { productPage.value = 1; productNoMore.value = false; firstItem.value = ''; lastItem.value = ''; await loadProducts(false); } else if (isDynamicCategoryView.value) { dynamicCategoryPage.value = 1; dynamicCategoryNoMore.value = false; dynamicCategoryFirstItem.value = ''; dynamicCategoryLastItem.value = ''; await loadDynamicCategory(false); } else { tabPage.value = 1; tabNoMore.value = false; tabFirstItem.value = ''; tabLastItem.value = ''; await loadTabItems(false); } }
 </script>
 
 <style scoped>

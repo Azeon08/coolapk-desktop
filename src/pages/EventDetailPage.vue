@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div class="top-nav-bar">
       <div class="nav-title-box">
         <span class="nav-title">活动详情</span>
@@ -144,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { usePageTabTitle } from '../composables/usePageTabTitle';
@@ -281,7 +282,8 @@ function getPrizeTitle(prize: any): string {
   return prize?.title || prize?.entityTitle || prize?.subTitle || '奖品';
 }
 
-async function fetchEventDetail() {
+async function fetchEventDetail(preserveTab = false) {
+  const previousTab = activeTabUrl.value;
   if (!eventId.value) return;
   headerLoading.value = true;
   headerError.value = false;
@@ -292,7 +294,9 @@ async function fetchEventDetail() {
       eventDetail.value = res.data;
       isJoined.value = !!(res.data.isJoinStatus ?? res.data.is_join_status ?? res.data.isJoin);
       const tabs = eventTabs.value;
-      if (tabs.length > 0) {
+      if (preserveTab) {
+        activeTabUrl.value = tabs.find(tab => tab.url === previousTab)?.url || tabs[0]?.url || '';
+      } else if (tabs.length > 0) {
         selectTab(tabs[0].url || '');
       } else {
         void fetchFeeds(false);
@@ -376,6 +380,10 @@ watch(eventId, () => {
   activeTabUrl.value = '';
   void fetchEventDetail();
 }, { immediate: true });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => feedsLoading.value || headerLoading.value);
+async function refreshMobilePage() { page.value = 1; noMore.value = false; await fetchEventDetail(true); await fetchFeeds(false); }
 </script>
 
 <style scoped>

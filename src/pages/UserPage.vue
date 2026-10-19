@@ -1,5 +1,5 @@
 <template>
-  <div class="user-page-wrapper custom-scrollbar" @scroll="handleUserPageScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="user-page-wrapper custom-scrollbar" @scroll="handleUserPageScroll">
     <!-- 全屏加载阻断 -->
     <div v-if="loadingProfile && !profile" class="loading-wrapper-full">
       <LoadingState text="正在获取酷友个人主页..." />
@@ -555,6 +555,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, reactive, watch, computed, nextTick, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -1443,6 +1444,10 @@ watch(
     else ensureActiveTabVisible();
   }
 );
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loadingProfile.value || loadingFeeds.value);
+async function refreshMobilePage() { await fetchUserProfile(); await fetchTabFeeds(true); }
 </script>
 
 <style scoped>

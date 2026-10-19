@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: searching }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div class="top-nav-bar">
       <div class="search-box">
         <i class="fas fa-search search-icon"></i>
@@ -133,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed } from 'vue';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import AppButton from '../components/common/AppButton.vue';
@@ -360,6 +361,9 @@ function openGoods(goods: any) {
 
 void loadHotWords();
 loadHistory();
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { if (keyword.value.trim()) await doSearch(); else await loadHotWords(); }
 </script>
 
 <style scoped>

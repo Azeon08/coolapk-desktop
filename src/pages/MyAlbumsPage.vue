@@ -1,5 +1,5 @@
 <template>
-  <div :class="['page-container', { 'is-embedded': embedded }]" class="custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy || !authStore.isLoggedIn }" :class="['page-container', { 'is-embedded': embedded }]" class="custom-scrollbar">
     <div v-if="!embedded" class="page-header">
       <div class="header-main">
         <div class="header-titles"><h2 class="page-title"><i class="fas fa-layer-group icon"></i> 我的专辑</h2><span class="page-subtitle">管理账号创建的应用专辑，数据来自酷安云端</span></div>
@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, ref, watch } from 'vue';
 import AppButton from '../components/common/AppButton.vue';
 import AppDialog from '../components/common/AppDialog.vue';
@@ -126,6 +127,10 @@ async function removeApk(item: any) {
 
 watch(() => authStore.user?.uid, () => { if (authStore.isLoggedIn) void loadAlbums(); });
 onMounted(() => { if (authStore.isLoggedIn) void loadAlbums(); });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await loadAlbums(); }
 </script>
 
 <style scoped>

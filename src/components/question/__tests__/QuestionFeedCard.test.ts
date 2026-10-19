@@ -54,6 +54,6 @@ describe('问答问题卡', () => {
     expect(wrapper.find('.question-feed-stats').text()).toContain('8 人关注');
 
     await wrapper.find('.question-feed-answer-action').trigger('click');
-    expect(routerPush).toHaveBeenCalledWith('/question/question-42');
+    expect(routerPush).toHaveBeenCalledWith({ path: '/question/question-42', query: { scrollTo: 'answers' } });
   });
 });

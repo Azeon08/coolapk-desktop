@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy || !authStore.isLoggedIn }" class="page-container custom-scrollbar">
     <!-- 未登录引导视图 -->
     <div v-if="!authStore.isLoggedIn" class="empty-wrapper login-guide-wrapper">
       <div class="login-guide-card">
@@ -174,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -501,6 +502,10 @@ onMounted(() => {
 onActivated(bindGlobalListeners);
 onDeactivated(unbindGlobalListeners);
 onUnmounted(unbindGlobalListeners);
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await loadFollowingFeeds(true); }
 </script>
 
 <style scoped>

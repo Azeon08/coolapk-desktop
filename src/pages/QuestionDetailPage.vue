@@ -1,5 +1,5 @@
 <template>
-  <div class="question-detail-page page-container custom-scrollbar" :class="{ 'no-image-detail-enabled': detailImagesEnabled }">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="question-detail-page page-container custom-scrollbar" :class="{ 'no-image-detail-enabled': detailImagesEnabled }">
     <div class="question-detail-shell">
       <div v-if="questionLoading && !question" class="state-wrapper">
         <LoadingState text="正在加载问题详情..." />
@@ -129,7 +129,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { vPullRefresh } from '../directives/pullRefresh';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { provideDetailImageScope } from '../composables/useNoImageMode';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import AppButton from '../components/common/AppButton.vue';
@@ -160,6 +162,9 @@ import { showToast } from '../utils/toast';
 
 defineOptions({ name: 'QuestionDetailPage' });
 const detailImagesEnabled = provideDetailImageScope();
+// 缓存页面只读取自身入口参数，避免其他页面导航时误触发定位。
+const entryAtAnswers = useRoute().query.scrollTo === 'answers';
+let answerEntryApplied = false;
 
 const props = defineProps<{
   questionId: string;
@@ -301,6 +306,15 @@ function changeSort(nextSort: QuestionSort) {
   void loadAnswers(true);
 }
 
+// 评论入口等待问题区域真正挂载后定位回答列表，首屏已有缓存时也能生效。
+watch([question, questionLoading, answersSection], async () => {
+  if (!entryAtAnswers || answerEntryApplied || !question.value || questionLoading.value) return;
+  await nextTick();
+  if (!answersSection.value) return;
+  answerEntryApplied = true;
+  answersSection.value.scrollIntoView({ block: 'start', behavior: 'auto' });
+}, { flush: 'post' });
+
 function scrollToAnswers() {
   answersSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -440,6 +454,10 @@ watch(questionId, (nextId) => {
   void loadAnswers(true);
 }, { immediate: true });
 
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => questionLoading.value || answersLoading.value);
+async function refreshMobilePage() { await loadQuestion(); await loadAnswers(true); }
 </script>
 
 <style scoped>

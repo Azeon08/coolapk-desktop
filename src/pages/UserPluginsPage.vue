@@ -1,5 +1,5 @@
 <template>
-  <div class="plugins-page custom-scrollbar" @scroll="onScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy || !storeMode }" class="plugins-page custom-scrollbar" @scroll="onScroll">
     <div class="plugins-content">
       <header class="plugins-toolbar">
         <button type="button" aria-label="返回" @click="navigateBack(router, '/me')"><i class="fas fa-arrow-left"></i></button>
@@ -48,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppAvatar from '../components/common/AppAvatar.vue';
@@ -183,6 +184,10 @@ async function claim(plugin: UserPlugin) {
   finally { claiming.value = 0; }
 }
 watch([storeMode, () => auth.user?.uid, () => auth.isLoggedIn], () => { void loadInitial(); }, { immediate: true });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value || saving.value || claiming.value !== 0);
+async function refreshMobilePage() { await loadInitial(); }
 </script>
 
 <style scoped>

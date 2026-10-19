@@ -1,5 +1,5 @@
 <template>
-  <div class="pictures-page custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="pictures-page custom-scrollbar" @scroll="handleScroll">
     <!-- 首页同款纯粹顶栏 Tab -->
     <div class="pictures-tabs-bar">
       <div class="pictures-tabs">
@@ -77,7 +77,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { vPullRefresh } from '../directives/pullRefresh';
+import { computed, ref, onMounted } from 'vue';
 import { useAppStore } from '../stores/app';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import AppImage from '../components/common/AppImage.vue';
@@ -202,6 +203,10 @@ function handleScroll(e: Event) {
 onMounted(() => {
   void fetchPictures(false);
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await fetchPictures(true); }
 </script>
 
 <style scoped>

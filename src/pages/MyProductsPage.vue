@@ -1,5 +1,5 @@
 <template>
-  <div class="my-products-page page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy || !authStore.isLoggedIn }" class="my-products-page page-container custom-scrollbar" @scroll="handleScroll">
     <header class="page-header">
       <div>
         <h2 class="page-title"><i class="fas fa-mobile-alt icon"></i>我的数码</h2>
@@ -73,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppImage from '../components/common/AppImage.vue';
@@ -151,6 +152,10 @@ function openProduct(product: any) {
   const id = String(product.id ?? product.entityId ?? '');
   if (id) void router.push(`/product/${encodeURIComponent(id)}`);
 }
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { page.value = 1; noMore.value = false; await loadItems(false); }
 </script>
 
 <style scoped>

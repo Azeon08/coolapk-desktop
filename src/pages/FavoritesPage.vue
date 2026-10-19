@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <!-- 分类快捷标签栏与操作栏 -->
     <div v-if="authStore.isLoggedIn" class="category-toolbar">
       <div class="category-tabs">
@@ -569,6 +569,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import FeedCard from '../components/feed/FeedCard.vue';
@@ -1349,6 +1350,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (collectionContentSearchTimer) clearTimeout(collectionContentSearchTimer);
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => collectionItemsLoading.value || collectionItemsLoadingMore.value);
+async function refreshMobilePage() { if (activeCollectionId.value) { await fetchCollectionDetail(); await fetchCollectionItems(true); } else await fetchCollections(); }
 </script>
 
 <style scoped>

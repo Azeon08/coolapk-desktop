@@ -1,6 +1,6 @@
 <template>
   <ProductCategoryBrowser v-if="isProductCategoryDirectory" :selected-id="productCategoryId" @open="openEntity" />
-  <div v-else ref="scrollContainer" class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: loading || loadingMore }" v-else ref="scrollContainer" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div v-if="!isDynamicPage" class="page-header page-data-header">
       <div class="header-titles">
         <h2 class="page-title"><i class="fas fa-list-ul icon"></i>{{ pageTitle }}</h2>
@@ -55,6 +55,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -318,6 +319,9 @@ function openEntity(entity: DiscoveryEntity) {
 }
 
 onMounted(() => { loadCurrentPage(true); });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { if (isDynamicPage.value) await loadDynamicPage(true); else await loadFeeds(true); }
 </script>
 
 <style scoped>

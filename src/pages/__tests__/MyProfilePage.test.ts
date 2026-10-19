@@ -1,3 +1,4 @@
+import { mobilePull } from '../../test-utils/mobilePull';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,4 +57,24 @@ describe('移动端个人中心', () => {
     await theme.trigger('click'); expect(settings.settings.theme).toBe('dark');
     await theme.trigger('click'); expect(settings.settings.theme).toBe('light'); wrapper.unmount();
   });
+});
+
+it('个人中心下拉刷新真实资料，更新统计且不重建页面或打开路由', async () => {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+  const auth = useAuthStore();
+  auth.isLoggedIn = true;
+  auth.user = { uid: '123', username: '测试', userAvatar: '' };
+  const wrapper = render();
+  try {
+    await flushPromises();
+    mocks.profile.mockResolvedValue({ data: { feed: 9, follow: 4, fans: 5 } });
+    const before = mocks.profile.mock.calls.length;
+    const identity = wrapper.get('.identity-link').element;
+    mobilePull(wrapper.element as HTMLElement);
+    await flushPromises();
+    expect(mocks.profile).toHaveBeenCalledTimes(before + 1);
+    expect(wrapper.get('.identity-link').element).toBe(identity);
+    expect(wrapper.get('.profile-statistics').text()).toContain('9');
+    expect(mocks.push).not.toHaveBeenCalled();
+  } finally { wrapper.unmount(); vi.restoreAllMocks(); }
 });

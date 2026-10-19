@@ -1,5 +1,5 @@
 <template>
-  <div
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: headerLoading || feedsLoading }"
     ref="pageContainerRef"
     :class="['page-container', 'custom-scrollbar', { 'is-embedded': embedded }]"
     @scroll="handleScroll"
@@ -98,7 +98,7 @@
     <button v-if="!isRatingView && activeTopicTab?.kind === 'rating' && Number(topicDetail?.allow_rate) === 0" class="topic-single-rating" type="button" @click="showToast('暂未开放点评', 'info')"><span><i class="fas fa-chart-column"></i> 点击星星评分</span><span class="single-rating-stars"><i v-for="n in 5" :key="n" class="fas fa-star"></i><i class="fas fa-chevron-right"></i></span></button>
     <div v-if="!isRatingView && activeTopicTab?.kind === 'rating'" class="topic-rating-toolbar"><span>排序规则</span><div><button v-for="option in sortOptions" :key="option.key" type="button" :aria-pressed="currentSort === option.key" @click="changeSort(option.key)">{{ option.label }}</button></div></div>
     <!-- 5. Feed 动态列表加载中转圈 -->
-    <TopicRatingPanel v-if="isRatingView" :key="String(topicDetail.id)" :detail="topicDetail" />
+    <TopicRatingPanel ref="mobileRatingPanel" v-if="isRatingView" :key="String(topicDetail.id)" :detail="topicDetail" />
     <div v-else-if="feedsLoading && page === 1" class="loading-wrapper">
       <LoadingState :text="loadingText" />
     </div>
@@ -132,6 +132,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, onMounted, onActivated, onDeactivated, nextTick, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -144,6 +145,7 @@ import LoadingState from '../components/common/LoadingState.vue';
 import EmptyState from '../components/common/EmptyState.vue';
 import EntityFilterBar from '../components/common/EntityFilterBar.vue';
 import TopicRatingPanel from '../components/topic/TopicRatingPanel.vue';
+const mobileRatingPanel = ref<InstanceType<typeof TopicRatingPanel> | null>(null);
 import TopicRatingSummary from '../components/topic/TopicRatingSummary.vue';
 import TopicMyRatingCard from '../components/topic/TopicMyRatingCard.vue';
 import { hasTopicRating } from '../utils/topicRating';
@@ -825,6 +827,9 @@ async function initializeTopic() {
 onMounted(() => {
   void initializeTopic();
 });
+
+// 下拉更新当前详情与当前栏目，保留筛选和排序。
+async function refreshMobilePage() { page.value = 1; noMore.value = false; await fetchTopicHeader(); if (isRatingView.value) await mobileRatingPanel.value?.refresh?.(); else await fetchFeeds(false); }
 </script>
 
 <style scoped>

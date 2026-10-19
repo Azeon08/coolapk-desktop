@@ -1,5 +1,5 @@
 <template>
-  <div
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileChatActive || isNotLoggedIn || loadingSessions || loadingMoreSessions }"
     class="messages-page"
     :class="{
       'is-mobile-chat-active': mobileChatActive,
@@ -297,6 +297,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { createEditorTextNodes } from "../utils/editorTextNodes";
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, computed, watch } from 'vue';
 
@@ -2110,6 +2111,9 @@ onUnmounted(() => {
   stopMessagePolling();
   saveCurrentDraft();
 });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { await loadSessions(); }
 </script>
 
 <style scoped>

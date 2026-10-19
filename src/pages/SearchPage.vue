@@ -1,5 +1,5 @@
 <template>
-  <div class="search-page-layout">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: activeState.loading || activeState.loadingMore }" class="search-page-layout">
     <div class="search-main-column">
       <div class="search-toolbar">
         <div class="search-toolbar-content">
@@ -78,6 +78,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, onUnmounted, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -487,6 +488,9 @@ onUnmounted(() => {
   if (suggestTimer) clearTimeout(suggestTimer);
   unbindGlobalListeners();
 });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { if (queryStr.value) await fetchTab(activeTab.value, false); else await loadHotItems(); }
 </script>
 
 <style scoped>

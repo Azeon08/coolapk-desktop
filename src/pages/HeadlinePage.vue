@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div class="headline-tabs">
       <button
         v-for="tab in tabs"
@@ -40,7 +40,8 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
+import { vPullRefresh } from '../directives/pullRefresh';
+import { computed, reactive, ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import FeedCard from '../components/feed/FeedCard.vue';
 import FeedSkeleton from '../components/feed/FeedSkeleton.vue';
@@ -181,6 +182,10 @@ onMounted(() => {
 onActivated(bindGlobalListeners);
 onDeactivated(unbindGlobalListeners);
 onUnmounted(unbindGlobalListeners);
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await loadFeeds(true); }
 </script>
 
 <style scoped>

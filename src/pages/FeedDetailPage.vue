@@ -1,5 +1,5 @@
 <template>
-  <div class="feed-detail-page custom-scrollbar" :class="{ 'is-official-mobile': officialMobileDetail, 'is-split': showSplit, 'no-image-detail-enabled': detailImagesEnabled, 'reading-actions-hidden': detailReading.hidden.value }" @scroll.capture="detailReading.onScroll" @wheel.capture.passive="detailReading.onWheel" @touchstart.capture.passive="detailReading.onTouchStart" @touchmove.capture.passive="detailReading.onTouchMove">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="feed-detail-page custom-scrollbar" :class="{ 'is-official-mobile': officialMobileDetail, 'is-split': showSplit, 'no-image-detail-enabled': detailImagesEnabled, 'reading-actions-hidden': detailReading.hidden.value }" @scroll.capture="detailReading.onScroll" @wheel.capture.passive="detailReading.onWheel" @touchstart.capture.passive="detailReading.onTouchStart" @touchmove.capture.passive="detailReading.onTouchMove">
     <button v-if="officialMobileDetail && (!feedDetail || isAnswerDetail)" type="button" aria-label="返回" class="detail-fallback-back" @click="navigateBack(router)"><i class="fas fa-arrow-left"></i> 返回</button>
     <div ref="detailShellRef" class="feed-detail-shell" :class="{ 'enter-at-comments': entryPosition === 'comments' }">
       <LoadingState v-if="loading && !feedDetail" text="正在加载原动态..." />
@@ -10,8 +10,10 @@
         @retry="fetchDetail"
       />
       <QuestionAnswerCard
+        ref="refreshAnswerCard"
         v-else-if="feedDetail && isAnswerDetail"
         :answer="feedDetail"
+        :official-mobile-detail="officialMobileDetail"
         detail-mode
         :auto-open-comments="!loading"
         :target-reply-id="targetReplyId"
@@ -26,6 +28,7 @@
         :feed="feedDetail"
       />
       <FeedCard
+        ref="refreshFeedCard"
         v-else-if="feedDetail"
         :feed="feedDetail"
         :official-mobile-detail="officialMobileDetail"
@@ -39,7 +42,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, provide, ref, watch } from 'vue';
+import { vPullRefresh } from '../directives/pullRefresh';
+import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { navigateBack } from '../utils/navigation';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -58,6 +62,7 @@ import { provideDetailImageScope } from '../composables/useNoImageMode';
 import { mobileDetailActionsHiddenKey, useMobileReadingNavigation } from '../composables/useMobileReadingNavigation';
 import { feedPageVisibleKey } from '../utils/feedPageVisibility';
 import { routeNavigationIsHistory } from '../utils/routeScroll';
+import { observeResizeOnFrame } from '../utils/observeResizeOnFrame';
 
 defineOptions({ name: 'FeedDetailPage' });
 const detailImagesEnabled = provideDetailImageScope();
@@ -79,13 +84,49 @@ const officialMobileDetail = useOfficialMobileFeedDetail();
 // 详情底栏沿用阅读导航设置；缓存页面和搜索、发布、大图浮层期间恢复状态。
 const detailActive = ref(true);
 const detailShellRef = ref<HTMLElement | null>(null);
+const refreshFeedCard = ref<InstanceType<typeof FeedCard> | null>(null);
+const refreshAnswerCard = ref<InstanceType<typeof QuestionAnswerCard> | null>(null);
 let entryPositionApplied = false;
+let stopHeaderResize: (() => void) | undefined;
+
+/** 顶栏高度包含状态栏安全区及字体适配，评论吸顶与入口定位共用实际测量值。 */
+function commentStickyHeader() {
+  if (!officialMobileDetail.value) return null;
+  // 回答详情使用页面返回栏，同样需要为它及安全区留出评论定位空间。
+  return detailShellRef.value?.querySelector<HTMLElement>('.official-detail-author') || detailShellRef.value?.parentElement?.querySelector<HTMLElement>('.detail-fallback-back');
+}
+function updateCommentHeaderHeight() {
+  const shell = detailShellRef.value;
+  const header = commentStickyHeader();
+  const height = header?.getBoundingClientRect().height || 0;
+  if (height > 0) shell?.style.setProperty('--feed-detail-header-height', `${height}px`);
+  else shell?.style.removeProperty('--feed-detail-header-height');
+  return height;
+}
+
+async function observeCommentHeader() {
+  await nextTick();
+  // 多个数据变化可能在同一帧触发，挂载新观察器前先释放上一份订阅。
+  stopHeaderResize?.();
+  stopHeaderResize = undefined;
+  if (!detailActive.value) return;
+  updateCommentHeaderHeight();
+  const header = commentStickyHeader();
+  if (header) stopHeaderResize = observeResizeOnFrame(header, updateCommentHeaderHeight);
+}
+watch([detailShellRef, officialMobileDetail, detailActive], () => { void observeCommentHeader(); }, { flush: 'post' });
+onUnmounted(() => stopHeaderResize?.());
+
 const detailVisible = inject(feedPageVisibleKey, ref(true));
-const detailReading = useMobileReadingNavigation(computed(() => officialMobileDetail.value && detailActive.value && detailVisible.value
+// Teleport 内容不随缓存页面一起隐藏，必须同时校验该详情实例所属的完整路由。
+const ownerRoute = route.fullPath;
+const detailInteractive = computed(() => detailActive.value && detailVisible.value && route.fullPath === ownerRoute);
+provide(feedPageVisibleKey, detailInteractive);
+const detailReading = useMobileReadingNavigation(computed(() => officialMobileDetail.value && detailInteractive.value
   && settingsStore.settings.autoHideMobileNavigation && !appStore.isSearchOpen && !appStore.isPublishOpen && !appStore.activeImageViewer), '.feed-detail-page.is-official-mobile');
 provide(mobileDetailActionsHiddenKey, detailReading.hidden);
 onActivated(() => { detailActive.value = true; entryPositionApplied = false; void applyEntryPosition(); });
-onDeactivated(() => { detailActive.value = false; });
+onDeactivated(() => { detailActive.value = false; stopHeaderResize?.(); });
 // 注意：判据用 `mobileLayout`（纯布局）而不是 `officialMobileDetail`。
 // 后者是「布局 × officialMobileFeedDetail 开关」的合取 —— 用户关掉那个开关后，
 // 触摸设备上它也是 false，于是平板会误入分栏。与点击侧（FeedCard 的
@@ -163,7 +204,9 @@ async function applyEntryPosition() {
   if (position === 'comments') {
     const comments = detailShellRef.value?.querySelector<HTMLElement>('.comment-toolbar');
     if (!comments) return;
-    page.scrollTop += comments.getBoundingClientRect().top - page.getBoundingClientRect().top;
+    // 留出仍在吸顶的作者栏，避免评论标题滚入状态栏或被顶栏覆盖。
+    const headerHeight = updateCommentHeaderHeight();
+    page.scrollTop += comments.getBoundingClientRect().top - page.getBoundingClientRect().top - headerHeight;
   } else {
     page.scrollTop = 0;
   }
@@ -172,7 +215,7 @@ async function applyEntryPosition() {
 }
 
 watch(entryPosition, () => { entryPositionApplied = false; });
-watch([entryPosition, feedDetail, loading], () => { void applyEntryPosition(); }, { flush: 'post' });
+watch([entryPosition, feedDetail, loading], () => { void observeCommentHeader(); void applyEntryPosition(); }, { flush: 'post' });
 
 async function fetchDetail() {
   if (!feedId.value) return;
@@ -208,6 +251,10 @@ watch(feedId, (nextFeedId) => {
   error.value = '';
   void fetchDetail();
 });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value);
+async function refreshMobilePage() { await fetchDetail(); await refreshFeedCard.value?.refreshComments?.(); await refreshAnswerCard.value?.refreshComments?.(); }
 </script>
 
 <style scoped>
@@ -224,6 +271,9 @@ watch(feedId, (nextFeedId) => {
   }
 }
 .feed-detail-page.is-official-mobile { background: var(--surface); }
+/* 详情卡片不能创建内部裁切滚动容器，否则作者栏与评论栏的 sticky 会失效。 */
+.is-official-mobile :deep(.feed-card.is-official-mobile-detail) { overflow: visible; }
+.is-official-mobile :deep(.official-detail-comments .comment-toolbar) { top: var(--feed-detail-header-height, 60px); scroll-margin-top: var(--feed-detail-header-height, 60px); }
 .is-official-mobile .feed-detail-shell { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
 .is-official-mobile .feed-detail-shell { transition: padding-bottom 200ms ease; }
 .is-official-mobile.reading-actions-hidden .feed-detail-shell { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }

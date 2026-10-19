@@ -1,6 +1,6 @@
 <template>
   <FeedReportPage v-if="isReportPage" :url="url" />
-  <div v-else class="page-container custom-scrollbar">
+  <div v-else v-pull-refresh="{ refresh: loadPage, disabled: loading || isReportPage }" class="page-container custom-scrollbar">
     <div v-if="!isEquipmentPage" class="page-header">
       <div class="header-main">
         <h2 class="page-title"><i class="fas fa-globe icon"></i> {{ title }}</h2>
@@ -30,6 +30,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';

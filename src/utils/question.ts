@@ -95,6 +95,14 @@ export function isQuestionFeedEntity(value: unknown): boolean {
   ) || Boolean(source.question && typeof source.question === 'object');
 }
 
+/** 问题详情使用提问实体自身的 ID，不能优先使用回答的父级 questionId 或 fid。 */
+export function getQuestionFeedId(value: unknown): string {
+  const source = asRecord(value);
+  return ['id', 'entityId', 'entity_id', 'feedId', 'feed_id', 'questionId', 'question_id']
+    .map(key => textValue(source[key]))
+    .find(id => Boolean(id) && !/^0+$/.test(id) && !['null', 'undefined'].includes(id)) || '';
+}
+
 function isTruthyFlag(value: unknown): boolean {
   if (value === true || value === 1) return true;
   const normalized = textValue(value).toLowerCase();

@@ -1,5 +1,5 @@
 <template>
-  <div ref="pageContainerRef" class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" ref="pageContainerRef" class="page-container custom-scrollbar" @scroll="handleScroll">
     <div class="page-header">
       <div class="header-main">
         <button type="button" class="back-button" @click="goBack">
@@ -31,6 +31,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -190,6 +191,10 @@ function handleScroll(event: Event) {
 }
 
 watch(() => route.fullPath, handleRouteChange, { immediate: true });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { resetState(); await loadPage(false); }
 </script>
 
 <style scoped>

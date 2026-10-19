@@ -1,5 +1,5 @@
 <template>
-  <div class="my-profile-page custom-scrollbar" @scroll="compact = ($event.target as HTMLElement).scrollTop > 100">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: !auth.isLoggedIn || mobileProfileRefreshing }" class="my-profile-page custom-scrollbar" @scroll="compact = ($event.target as HTMLElement).scrollTop > 100">
     <div class="profile-toolbar" :class="{ 'is-compact': compact }">
       <button v-if="compact" class="compact-avatar" type="button" aria-label="个人主页" @click="openProfile"><AppImage v-if="auth.user?.userAvatar" :src="auth.user.userAvatar" alt="头像" /></button>
       <button type="button" aria-label="扫一扫（暂未支持）" disabled><span class="official-icon" :style="iconStyle(scanIcon)"></span></button>
@@ -35,12 +35,13 @@
       </button>
     </section>
     <button type="button" class="profile-help profile-card" @click="openHelp"><i class="fas fa-volume-high"></i><span>有疑惑请参考「酷安常见问题」 &gt;&gt;&gt;</span><i class="fas fa-chevron-right"></i></button>
-    <MyProfileCards />
+    <MyProfileCards ref="mobileProfileCards" />
     <AppDialog :is-open="qrOpen" title="我的二维码名片" @close="qrOpen = false"><img v-if="qrImage" class="qr-image" :src="qrImage" alt="我的二维码名片" /><p v-else>{{ qrStatus }}</p></AppDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
@@ -49,6 +50,8 @@ import { useNotificationStore } from '../stores/notifications';
 import { CoolapkTauriAPI } from '../api/coolapk';
 import AppDialog from '../components/common/AppDialog.vue';
 import MyProfileCards from '../components/profile/MyProfileCards.vue';
+const mobileProfileCards = ref<InstanceType<typeof MyProfileCards> | null>(null);
+const mobileProfileRefreshing = ref(false);
 import AppImage from '../components/common/AppImage.vue';
 import AppAvatar from '../components/common/AppAvatar.vue';
 import ratingIcon from '../assets/official-profile/ic_my_rating_fill.svg';
@@ -79,11 +82,11 @@ const tipsDismissed = ref(false);
 const accountTips = computed(() => profileData.value?.tips as { title: string; logo?: string; buttonName?: string; url?: string; closable?: number } | undefined);
 function openTip() { if (accountTips.value?.url) void CoolapkTauriAPI.openUrl(accountTips.value.url, 'internal'); }
 let profileRequest = 0;
-watch(uid, async (value) => {
+async function refreshProfile() {
+  const value = uid.value;
   const request = ++profileRequest;
-  profileData.value = null;
-  tipsDismissed.value = false;
   if (!value) return;
+  mobileProfileRefreshing.value = true;
   try {
     const response = await CoolapkTauriAPI.getMyProfile(value);
     if (request !== profileRequest) return;
@@ -91,7 +94,9 @@ watch(uid, async (value) => {
     profileData.value = data;
     auth.updateProfileStats(data);
   } catch (error) { console.warn('加载个人中心资料失败', error); }
-}, { immediate: true });
+  finally { if (request === profileRequest) mobileProfileRefreshing.value = false; }
+}
+watch(uid, () => { profileData.value = null; tipsDismissed.value = false; void refreshProfile(); }, { immediate: true });
 const statistics = computed(() => [
   { label: '动态', value: profileData.value?.feed ?? profileData.value?.feednum ?? profileData.value?.feedNum, path: `/user/${uid.value}` },
   { label: '关注', value: auth.user?.follow, path: `/user/${uid.value}/relations/follow` },
@@ -128,6 +133,9 @@ async function showQr() {
     if (!qrImage.value) throw new Error('接口未返回二维码图片');
   } catch { qrStatus.value = '二维码加载失败，请稍后重试'; }
 }
+
+// 下拉更新当前详情与当前栏目，保留筛选和排序。
+async function refreshMobilePage() { await refreshProfile(); await mobileProfileCards.value?.refresh?.(); }
 </script>
 
 <style scoped>

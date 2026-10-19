@@ -179,6 +179,9 @@ async function load(more: boolean) {
 
 watch(() => [props.detail.id, star.value, ratingType.value, detailOnly.value], () => { void load(false); }, { immediate: true });
 onUnmounted(() => { requestId++; });
+
+// 由外层页面下拉统一等待内容刷新完成。
+defineExpose({ refresh: () => load(false) });
 </script>
 
 <style scoped>

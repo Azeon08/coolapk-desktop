@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" class="page-container custom-scrollbar" @scroll="handleScroll">
     <!-- 节点头部 -->
     <div v-if="headerLoading" class="node-header-card skeleton-header">
       <LoadingState text="正在加载节点信息..." />
@@ -70,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { ref, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CoolapkTauriAPI } from '../api/coolapk';
@@ -323,6 +324,10 @@ watch(() => [route.params.nodeType, route.params.nodeId], () => {
   void fetchNodeHeader();
   void fetchFeeds(false);
 }, { immediate: true });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => feedsLoading.value || headerLoading.value);
+async function refreshMobilePage() { resetState(); await fetchNodeHeader(); await fetchFeeds(false); }
 </script>
 
 <style scoped>

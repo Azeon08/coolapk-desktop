@@ -1,5 +1,5 @@
 <template>
-  <div :class="['page-container', { 'is-embedded': embedded }]" class="custom-scrollbar" @scroll="handleScroll">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: mobileRefreshBusy }" :class="['page-container', { 'is-embedded': embedded }]" class="custom-scrollbar" @scroll="handleScroll">
     <div v-if="!embedded" class="page-header">
       <div class="header-main">
         <div class="header-titles">
@@ -39,6 +39,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import FeedCard from '../components/feed/FeedCard.vue';
@@ -186,6 +187,10 @@ function handleScroll(event: Event) {
 }
 
 onMounted(() => { if (requiresLogin.value ? authStore.isLoggedIn : true) void load(true); });
+
+// 移动端下拉刷新复用当前页面的数据加载，保留筛选与页面实例。
+const mobileRefreshBusy = computed(() => loading.value || loadingMore.value);
+async function refreshMobilePage() { await load(true); }
 </script>
 
 <style scoped>

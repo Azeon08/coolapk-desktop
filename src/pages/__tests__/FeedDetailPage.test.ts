@@ -3,11 +3,16 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { defineComponent, inject, ref } from 'vue';
 import { mobileDetailActionsHiddenKey } from '../../composables/useMobileReadingNavigation';
 import { routeNavigationIsHistory } from '../../utils/routeScroll';
+import { feedPageVisibleKey } from '../../utils/feedPageVisibility';
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), context: vi.fn(), save: vi.fn(), back: vi.fn(), replace: vi.fn(), query: { replyId: '123' } as Record<string, string>, history: { back: '/' as string | null }, mobile: { value: true } as { value: boolean } }));
+const mocks = vi.hoisted(() => ({ routeFullPath: { value: '/feed/42' }, detail: vi.fn(), context: vi.fn(), save: vi.fn(), back: vi.fn(), replace: vi.fn(), query: { replyId: '123' } as Record<string, string>, history: { back: '/' as string | null }, mobile: { value: true } as { value: boolean } }));
 vi.mock('../../api/coolapk', () => ({ CoolapkTauriAPI: { getFeedDetail: mocks.detail } }));
 vi.mock('../../stores/app', () => ({ useAppStore: () => ({ getFeedDetailContext: mocks.context, setFeedDetailContext: mocks.save }) }));
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { feedId: '42' }, query: mocks.query }), useRouter: () => ({ back: mocks.back, replace: mocks.replace, options: { history: { state: mocks.history } } }) }));
+vi.mock('vue-router', async () => {
+  const { ref } = await import('vue');
+  mocks.routeFullPath = ref('/feed/42');
+  return { useRoute: () => ({ get fullPath() { return mocks.routeFullPath.value; }, params: { feedId: '42' }, query: mocks.query }), useRouter: () => ({ back: mocks.back, replace: mocks.replace, options: { history: { state: mocks.history } } }) };
+});
 vi.mock('../../router', () => ({ router: { push: vi.fn(), resolve: vi.fn(() => ({ matched: [] })) } }));
 vi.mock('../../composables/usePageTabTitle', () => ({ usePageTabTitle: () => {} }));
 vi.mock('../../composables/useOfficialMobileFeedDetail', async (importOriginal) => {
@@ -21,6 +26,27 @@ import FeedDetailPage from '../FeedDetailPage.vue';
 import { useSettingsStore } from '../../stores/settings';
 
 describe('官方详情评论加载', () => {
+  it.each(['feed', 'answer'])('%s 详情未销毁时，切到首页或另一个详情立即撤下全局底栏', async kind => {
+    mocks.routeFullPath.value = '/feed/42?scrollTo=comments';
+    mocks.context.mockReturnValue(null);
+    let finish!: (value: unknown) => void;
+    mocks.detail.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const bar = defineComponent({ setup: () => ({ visible: inject(feedPageVisibleKey) }), template: '<article><Teleport to="body"><div v-if="visible" class="test-owned-actions">写评论</div></Teleport></article>' });
+    const wrapper = mount(FeedDetailPage, { props: { feedId: '42' }, global: { stubs: { FeedCard: bar, QuestionAnswerCard: bar } } });
+    try {
+      // 离开时保留原组件并让详情请求随后返回，模拟过渡和缓存中的异步更新。
+      mocks.routeFullPath.value = '/';
+      finish({ data: { id: '42', uid: '1', username: '作者', message: '正文', feedType: kind === 'answer' ? 'answer' : 'feed' } });
+      await flushPromises();
+      expect(document.querySelector('.test-owned-actions')).toBeNull();
+      mocks.routeFullPath.value = '/feed/42?scrollTo=comments'; await flushPromises();
+      expect(document.querySelectorAll('.test-owned-actions')).toHaveLength(1);
+      mocks.routeFullPath.value = '/feed/42?scrollTo=top'; await flushPromises();
+      expect(document.querySelector('.test-owned-actions')).toBeNull();
+      mocks.routeFullPath.value = '/digital'; await flushPromises();
+      expect(document.querySelector('.test-owned-actions')).toBeNull();
+    } finally { wrapper.unmount(); }
+  });
   it('详情向下阅读收起底栏，反向滚动恢复，关闭设置后保持显示', async () => {
     mocks.context.mockReturnValue(null);
     mocks.detail.mockResolvedValue({ data: { id: '42', username: '酷友', message: '正文' } });
@@ -46,11 +72,28 @@ describe('官方详情评论加载', () => {
     } finally { wrapper.unmount(); }
   });
   beforeEach(() => {
+    mocks.routeFullPath.value = '/feed/42';
     routeNavigationIsHistory.value = false;
     mocks.query = { replyId: '123' };
     mocks.mobile.value = true;
     useSettingsStore().settings.desktopCommentsOnRight = false;
   });
+  it.each([60, 88, 104])('评论入口为实际顶栏预留 %s 像素，安全区与字体高度不被覆盖', async headerHeight => {
+    mocks.query = { scrollTo: 'comments' };
+    mocks.context.mockReturnValue({ id: '42', uid: '1', username: '作者', message: '正文' });
+    mocks.detail.mockResolvedValue({ data: { id: '42', uid: '1', username: '作者', message: '正文' } });
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const page = this.closest('.feed-detail-page') as HTMLElement | null;
+      return { top: this.classList.contains('comment-toolbar') ? 600 - (page?.scrollTop || 0) : 0, height: this.classList.contains('official-detail-author') ? headerHeight : 0 } as DOMRect;
+    });
+    const wrapper = mount(FeedDetailPage, { props: { feedId: '42' }, global: { stubs: { FeedCard: { template: '<article class="feed-card is-official-mobile-detail"><header class="official-detail-author">作者</header><div class="official-detail-comments"><div class="comment-toolbar">评论</div></div></article>' } } } });
+    try {
+      await flushPromises();
+      expect((wrapper.element as HTMLElement).scrollTop).toBe(600 - headerHeight);
+      expect((wrapper.get('.feed-detail-shell').element as HTMLElement).style.getPropertyValue('--feed-detail-header-height')).toBe(`${headerHeight}px`);
+    } finally { wrapper.unmount(); rect.mockRestore(); }
+  });
+
   it.each(['top', 'comments'])('根据入口定位到 %s，详情刷新后不打断继续阅读', async scrollTo => {
     mocks.query = { scrollTo };
     mocks.context.mockReturnValue({ id: '42', uid: '1', username: '作者', message: '正文' });

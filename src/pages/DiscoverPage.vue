@@ -1,5 +1,5 @@
 <template>
-  <div :class="['discover-page', { 'is-cool-picture': isCoolPicturePage }]" @pointerdown="discoveryRipple" @keydown="discoveryRipple">
+  <div v-pull-refresh="{ refresh: refreshMobilePage, disabled: Boolean(selectedTab && states[selectedTab.key]?.loading) }" :class="['discover-page', { 'is-cool-picture': isCoolPicturePage }]" @pointerdown="discoveryRipple" @keydown="discoveryRipple">
     <div class="discover-main-column">
       <div class="discover-toolbar-row">
         <FeedTabs ref="feedTabsView" v-if="tabs.length" :active-key="selectedKey" :tabs="feedTabs" :show-manage="false" @update:active-key="selectTab" />
@@ -61,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import { vPullRefresh } from '../directives/pullRefresh';
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { logDiagnostic, logDiagnosticLayout, summarizeDiagnosticError } from '../utils/diagnosticLogger';
 import { useRouter } from 'vue-router';
@@ -394,6 +395,9 @@ function handleScroll(event: Event, tab: DiscoveryTab) {
 }
 
 onMounted(() => { void loadConfig(); });
+
+// 下拉仅刷新当前栏目，不切换筛选、路由或页面实例。
+async function refreshMobilePage() { if (selectedTab.value) await loadSelected(true); else await loadConfig(); }
 </script>
 
 <style scoped>
